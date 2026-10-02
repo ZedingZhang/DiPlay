@@ -1,6 +1,5 @@
 package com.shilapi.xcertplay
 
-import android.content.ComponentName
 import android.graphics.Matrix
 import android.os.Looper
 import android.view.MotionEvent
@@ -22,6 +21,8 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.MockedConstruction
+import org.mockito.Mockito.mockConstruction
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
@@ -35,13 +36,13 @@ import org.robolectric.shadows.ShadowLog
 @LooperMode(LooperMode.Mode.PAUSED)
 class CarPlayHostDisplaySizeTest {
     private lateinit var activity: CarPlayHostActivity
+    private lateinit var controllerConstruction: MockedConstruction<CarPlayController>
     private val sizeClass = Class.forName("com.shilapi.xcertplay.CarPlayHostActivity\$DisplaySize")
 
     @Before fun setUp() {
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
-        // The Mi 10 has no BYD service; Robolectric otherwise sends a null service callback.
-        shadowOf(activity.application).declareComponentUnbindable(ComponentName(
-            "com.ts.car.someip.service", "com.ts.car.someip.service.manager.SomeIpServerService"))
+        // Exercise host startup without launching vendor-service workers or real transports.
+        controllerConstruction = mockConstruction(CarPlayController::class.java)
         (getField("teardownExecutor") as ExecutorService).shutdownNow()
         setField("teardownExecutor", PausedExecutorService())
         CarPlayBackgroundSession::class.java.getDeclaredField("owner").apply { isAccessible = true }
@@ -60,6 +61,7 @@ class CarPlayHostDisplaySizeTest {
         (getField("teardownExecutor") as ExecutorService).shutdownNow()
         (getField("airPlayCommandExecutor") as ExecutorService).shutdownNow()
         CarPlayBackgroundSession.clear()
+        controllerConstruction.close()
     }
 
     @Test fun surroundViewOpenAndCloseKeepsTheNegotiatedCanvas() {
