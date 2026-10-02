@@ -1,13 +1,13 @@
 package com.shilapi.xcertplay.airplay
 
 /**
- * The single user-facing CarPlay size. iOS keeps controls at a fixed physical size, so the size
- * is expressed as the physical screen width reported to the iPhone: a wider screen gets smaller controls.
+ * The single user-facing CarPlay size. Keep the stored physical-width presets compatible,
+ * but also change the negotiated canvas: some iPhones ignore physical-size-only changes.
  */
-enum class CarPlaySize(val label: String, val widthMillimeters: Int) {
-    LARGE("Large", 250),
-    MEDIUM("Medium", 300),
-    SMALL("Small", 350);
+enum class CarPlaySize(val label: String, val widthMillimeters: Int, val uiScalePercent: Int) {
+    LARGE("Large", 250, 115),
+    MEDIUM("Medium", 300, 100),
+    SMALL("Small", 350, 85);
 
     companion object {
         val DEFAULT = MEDIUM
