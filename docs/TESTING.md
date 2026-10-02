@@ -6,6 +6,10 @@ For channel memory, connect until authenticated CarPlay renders, disconnect and 
 
 Include head-unit model, DiLink/Android, iPhone/iOS, wired/wireless, app version and exact steps. Do not post credentials or unreviewed personal information. See [compatibility](COMPATIBILITY.md) for remaining limitations.
 
+## CarPlay OEM return icon
+
+On a non-BYD device such as Xiaomi Mi 10 / Android 11, connect or fully reconnect and open the CarPlay app grid. The BYD return tile should be absent, including when the device previously used a build that advertised the BYD icon. In the AirPlay `/info` log, `oemIconVisible` should be false and `oemIcons` and `oemIconLabel` should be absent. On a BYD head unit, confirm the return tile still appears and opens the car home screen; a configured custom image should still be used.
+
 ## CarPlay size settings
 
 Connect until CarPlay renders. In Settings > Display and performance, select Large, Medium, then Small, applying each change and allowing the reconnect to finish. Compare icons and text on the same CarPlay screen, and check touch targets near all four corners. Repeat at 80% resolution and in portrait orientation, then return to Medium at native resolution.

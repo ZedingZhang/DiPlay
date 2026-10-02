@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay
 
+import android.content.pm.PackageInfo
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.util.Range
@@ -12,10 +13,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.MediaCodecInfoBuilder
 import org.robolectric.shadows.MediaCodecInfoBuilder.CodecCapabilitiesBuilder
 import org.robolectric.shadows.ShadowMediaCodecList
+import org.robolectric.shadows.ShadowBuild
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
@@ -107,6 +110,48 @@ class CarPlayHostSizeSettingTest {
         select(CarPlaySize.MEDIUM)
         assertCanvas(config().main, 2250 to 1080)
         assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("not_enlarging"))
+    }
+
+    @Test fun xiaomiMi10DoesNotAdvertiseTheBydReturnIcon() {
+        device("Xiaomi", "Xiaomi", "Xiaomi/umi/umi:11/RKQ1.200826.002/test-keys")
+        select(CarPlaySize.MEDIUM)
+        assertEquals("BYD", AirPlayPersistence.loadOemLabel(activity))
+        val config = config()
+        assertTrue(config.icons.isEmpty())
+        val info = AirPlayInfoPlist.build(config)
+        assertEquals(false, info["oemIconVisible"])
+        assertFalse(info.containsKey("oemIconLabel"))
+        assertFalse(info.containsKey("oemIcons"))
+    }
+
+    @Test fun bydManufacturerBrandOrFirmwareRetainsTheReturnIcon() {
+        select(CarPlaySize.MEDIUM)
+        for ((manufacturer, brand, fingerprint) in listOf(
+            Triple("byd", "unknown", "unknown"),
+            Triple("unknown", "BYD", "unknown"),
+            Triple("unknown", "unknown", DiLink51ClusterLayout.FINGERPRINT),
+        )) {
+            device(manufacturer, brand, fingerprint)
+            val config = config()
+            assertEquals("BYD", config.oemLabel)
+            assertTrue(config.icons.single().data.contentEquals(
+                activity.resources.openRawResource(com.shilapi.xcertplay.host.R.raw.ic_car_home).use { it.readBytes() },
+            ))
+            assertEquals(true, AirPlayInfoPlist.build(config)["oemIconVisible"])
+        }
+    }
+
+    @Test fun aBydNavigationServiceRetainsTheIconOnGenericVendorFirmware() {
+        device("unknown", "unknown", "unknown")
+        shadowOf(activity.packageManager).installPackage(PackageInfo().apply { packageName = "com.byd.amapservice" })
+        select(CarPlaySize.MEDIUM)
+        assertEquals(1, config().icons.size)
+    }
+
+    private fun device(manufacturer: String, brand: String, fingerprint: String) {
+        ShadowBuild.setManufacturer(manufacturer)
+        ShadowBuild.setBrand(brand)
+        ShadowBuild.setFingerprint(fingerprint)
     }
 
     private fun select(size: CarPlaySize, resolution: Int = 10) {
