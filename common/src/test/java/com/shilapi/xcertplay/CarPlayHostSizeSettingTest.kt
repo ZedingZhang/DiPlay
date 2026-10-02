@@ -36,7 +36,7 @@ class CarPlayHostSizeSettingTest {
         val capabilities = CodecCapabilitiesBuilder.newBuilder().setMediaFormat(format)
             .setProfileLevels(arrayOf(profile))
             .setColorFormats(intArrayOf(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)).build()
-        video = capabilities.videoCapabilities
+        video = requireNotNull(capabilities.videoCapabilities)
         ShadowMediaCodecList.addCodec(MediaCodecInfoBuilder.newBuilder().setName("OMX.test.hardware.avc")
             .setIsHardwareAccelerated(true).setCapabilities(capabilities).build())
     }
