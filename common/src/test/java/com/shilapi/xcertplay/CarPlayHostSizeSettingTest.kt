@@ -1,8 +1,8 @@
 package com.shilapi.xcertplay
 
 import android.media.MediaCodecInfo
-import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.util.Range
 import com.shilapi.xcertplay.airplay.*
 import java.util.concurrent.ExecutorService
 import org.junit.After
@@ -10,41 +10,39 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.MockedConstruction
-import org.mockito.Mockito.*
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.MediaCodecInfoBuilder
+import org.robolectric.shadows.MediaCodecInfoBuilder.CodecCapabilitiesBuilder
+import org.robolectric.shadows.ShadowMediaCodecList
+import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30])
 class CarPlayHostSizeSettingTest {
     private lateinit var activity: CarPlayHostActivity
-    private lateinit var codecLists: MockedConstruction<MediaCodecList>
+    private lateinit var video: MediaCodecInfo.VideoCapabilities
     private val sizeClass = Class.forName("com.shilapi.xcertplay.CarPlayHostActivity\$DisplaySize")
-    private var supportsSize = true
-    private var supportsRate = true
 
     @Before fun setUp() {
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
         field("airPlayIdentity", AirPlayIdentity.generate())
-        val decoder = mock(MediaCodecInfo::class.java)
-        val capabilities = mock(MediaCodecInfo.CodecCapabilities::class.java)
-        val video = mock(MediaCodecInfo.VideoCapabilities::class.java)
-        `when`(decoder.name).thenReturn("OMX.test.hardware.avc")
-        `when`(decoder.supportedTypes).thenReturn(arrayOf(MediaFormat.MIMETYPE_VIDEO_AVC))
-        `when`(decoder.isHardwareAccelerated).thenReturn(true)
-        `when`(decoder.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)).thenReturn(capabilities)
-        `when`(capabilities.videoCapabilities).thenReturn(video)
-        `when`(video.isSizeSupported(anyInt(), anyInt())).thenAnswer { supportsSize }
-        `when`(video.areSizeAndRateSupported(anyInt(), anyInt(), anyDouble())).thenAnswer { supportsRate }
-        codecLists = mockConstruction(MediaCodecList::class.java) { list, _ ->
-            `when`(list.codecInfos).thenReturn(arrayOf(decoder))
+        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 3840, 3840)
+        val profile = MediaCodecInfo.CodecProfileLevel().apply {
+            this.profile = MediaCodecInfo.CodecProfileLevel.AVCProfileHigh
+            level = MediaCodecInfo.CodecProfileLevel.AVCLevel52
         }
+        val capabilities = CodecCapabilitiesBuilder.newBuilder().setMediaFormat(format)
+            .setProfileLevels(arrayOf(profile))
+            .setColorFormats(intArrayOf(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)).build()
+        video = capabilities.videoCapabilities
+        ShadowMediaCodecList.addCodec(MediaCodecInfoBuilder.newBuilder().setName("OMX.test.hardware.avc")
+            .setIsHardwareAccelerated(true).setCapabilities(capabilities).build())
     }
 
     @After fun tearDown() {
-        codecLists.close()
+        ShadowMediaCodecList.reset()
         (field("teardownExecutor") as ExecutorService).shutdownNow()
         (field("airPlayCommandExecutor") as ExecutorService).shutdownNow()
     }
@@ -76,7 +74,7 @@ class CarPlayHostSizeSettingTest {
 
     @Test fun unsupportedSmallCanvasFallsBackWithoutLosingThePreferenceAndCanRetry() {
         select(CarPlaySize.SMALL)
-        supportsSize = false
+        ReflectionHelpers.setField(video, "mWidthRange", Range(1, 2250))
         assertCanvas(config().main, 2250 to 1080)
         val report = DisplayDiagnosticSnapshot.report(activity)
         assertTrue(report.contains("selected=Small percent=85"))
@@ -84,21 +82,21 @@ class CarPlayHostSizeSettingTest {
         assertTrue(report.contains("canvas_dimensions_unsupported"))
         assertEquals(CarPlaySize.SMALL.widthMillimeters, AirPlayPersistence.loadWidthPhysicalMm(activity))
 
-        supportsSize = true
+        ReflectionHelpers.setField(video, "mWidthRange", Range(1, 3840))
         assertCanvas(config().main, 2648 to 1270)
     }
 
     @Test fun unsupportedFrameRateFallsBackAndReportsTheReason() {
         select(CarPlaySize.SMALL)
-        supportsRate = false
+        ReflectionHelpers.setField(video, "mFrameRateRange", Range(1, 30))
         assertCanvas(config().main, 2250 to 1080)
         assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("frame_rate_unsupported"))
     }
 
     @Test fun fourKLimitFallsBackBeforeQueryingTheDecoder() {
         select(CarPlaySize.SMALL)
+        ShadowMediaCodecList.reset()
         assertCanvas(config(width = 3840, height = 2160).main, 3840 to 2160)
-        assertTrue(codecLists.constructed().isEmpty())
         assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("canvas_4k_limit"))
     }
 
@@ -108,7 +106,7 @@ class CarPlayHostSizeSettingTest {
         assertCanvas(config().main, 1956 to 940)
         select(CarPlaySize.MEDIUM)
         assertCanvas(config().main, 2250 to 1080)
-        assertTrue(codecLists.constructed().isEmpty())
+        assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("not_enlarging"))
     }
 
     private fun select(size: CarPlaySize, resolution: Int = 10) {
