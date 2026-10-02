@@ -47,6 +47,12 @@ class CarPlayHostDisplaySizeTest {
 
     @After fun tearDown() {
         (getField("shuttingDown") as AtomicBoolean).set(true)
+        (getField("controller") as? CarPlayController)?.let {
+            CarPlayMediaKeys.detach(it)
+            it.close()
+            it.awaitClosed(1000)
+        }
+        (getField("sink") as? AndroidMediaSink)?.close()
         (getField("teardownExecutor") as ExecutorService).shutdownNow()
         (getField("airPlayCommandExecutor") as ExecutorService).shutdownNow()
         CarPlayBackgroundSession.clear()
@@ -141,6 +147,63 @@ class CarPlayHostDisplaySizeTest {
         assertEquals(0, getField("restartGeneration"))
     }
 
+    @Test @Config(sdk = [30]) fun rotatingBackDuringTeardownStartsWithTheLatestSize() {
+        allowStartup()
+        startSession(windowWidth = 2250, windowHeight = 1080)
+        applySize(1080, 2250)
+        assertTrue(getField("handshakeResetInProgress") as Boolean)
+        applySize(2250, 1080)
+
+        finishTeardown()
+
+        assertSessionSize(2250, 1080)
+        assertEquals(1, getField("restartGeneration"))
+        assertFalse(getField("handshakeResetInProgress") as Boolean)
+    }
+
+    @Test @Config(sdk = [30]) fun teardownWaitsForAPendingRotationToSettle() {
+        allowStartup()
+        startSession(windowWidth = 2250, windowHeight = 1080)
+        applySize(1080, 2250)
+        scheduleSize(2250, 1080)
+
+        finishTeardown()
+        assertNull(getField("sessionDisplay"))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+
+        assertSessionSize(2250, 1080)
+        assertNull(getField("pendingDisplaySize"))
+        assertEquals(1, getField("restartGeneration"))
+    }
+
+    @Test @Config(sdk = [30]) fun cancellingAPendingRotationResumesStartup() {
+        allowStartup()
+        startSession(windowWidth = 2250, windowHeight = 1080)
+        applySize(1080, 2250)
+        scheduleSize(2250, 1080)
+        finishTeardown()
+        assertNull(getField("sessionDisplay"))
+
+        scheduleSize(1080, 2250)
+
+        assertSessionSize(1080, 2250)
+        assertNull(getField("pendingDisplaySize"))
+        assertEquals(1, getField("restartGeneration"))
+    }
+
+    @Test @Config(sdk = [30]) fun teardownRechecksStartupPrerequisites() {
+        allowStartup()
+        startSession()
+        applySize(990, 1920)
+        setField("vpnReady", false)
+
+        finishTeardown()
+
+        assertNull(getField("controller"))
+        assertNull(getField("sessionDisplay"))
+        assertFalse(getField("handshakeResetInProgress") as Boolean)
+    }
+
     @Test fun initialSizeDetectionKeepsTheNormalStartupPath() {
         setField("activeDisplaySize", null)
         applySize(1920, 990)
@@ -230,6 +293,27 @@ class CarPlayHostDisplaySizeTest {
 
     private fun keepLogs(): Int = ShadowLog.getLogsForTag("xcertplay-usb").count {
         it.msg.contains("keeping CarPlay session")
+    }
+
+    private fun allowStartup() {
+        setField("airPlayIdentity", AirPlayIdentity.generate())
+        setField("mfiTarget", MfiTarget.LOCAL)
+        setField("vpnReady", true)
+        setField("microphonePermissionResolved", true)
+    }
+
+    private fun finishTeardown() {
+        (getField("teardownExecutor") as PausedExecutorService).runAll()
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun assertSessionSize(width: Int, height: Int) {
+        val display = getField("sessionDisplay") as? CarPlaySessionDisplay
+        assertNotNull("CarPlay must resume after the display settles", display)
+        assertEquals(width, display!!.windowWidth)
+        assertEquals(height, display.windowHeight)
+        assertEquals(width, display.width)
+        assertEquals(height, display.height)
     }
 
     private fun size(width: Int, height: Int): Any = sizeClass
