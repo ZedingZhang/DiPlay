@@ -191,6 +191,22 @@ class CarPlayHostDisplaySizeTest {
         assertEquals(1, getField("restartGeneration"))
     }
 
+    @Test @Config(sdk = [30]) fun aPendingSameSizeRotationResumesAfterTeardown() {
+        allowStartup()
+        startSession(rotation = Surface.ROTATION_180)
+        scheduleSize(1920, 990)
+        activity.javaClass.getDeclaredMethod("restartCarPlay", String::class.java)
+            .apply { isAccessible = true }.invoke(activity, "Test reconnect")
+        finishTeardown()
+        assertNull(getField("sessionDisplay"))
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+
+        assertSessionSize(1920, 990)
+        assertNull(getField("pendingDisplaySize"))
+        assertEquals(1, getField("restartGeneration"))
+    }
+
     @Test @Config(sdk = [30]) fun teardownRechecksStartupPrerequisites() {
         allowStartup()
         startSession()
@@ -212,9 +228,11 @@ class CarPlayHostDisplaySizeTest {
         assertEquals(0, keepLogs())
     }
 
-    @Test fun resizeWithoutASessionKeepsTheExistingRestartPath() {
+    @Test fun resizeWithoutASessionRecordsTheSizeWithoutAnotherTeardown() {
         applySize(700, 990)
-        assertEquals(1, getField("restartGeneration"))
+        assertEquals(size(700, 990), getField("activeDisplaySize"))
+        assertEquals(0, getField("restartGeneration"))
+        assertFalse(getField("handshakeResetInProgress") as Boolean)
     }
 
     @Test fun textureTransformFitsTheNegotiatedCanvas() {
