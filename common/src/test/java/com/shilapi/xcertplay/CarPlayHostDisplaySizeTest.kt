@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay
 
+import android.content.ComponentName
 import android.graphics.Matrix
 import android.os.Looper
 import android.view.MotionEvent
@@ -38,6 +39,9 @@ class CarPlayHostDisplaySizeTest {
 
     @Before fun setUp() {
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
+        // The Mi 10 has no BYD service; Robolectric otherwise sends a null service callback.
+        shadowOf(activity.application).declareComponentUnbindable(ComponentName(
+            "com.ts.car.someip.service", "com.ts.car.someip.service.manager.SomeIpServerService"))
         (getField("teardownExecutor") as ExecutorService).shutdownNow()
         setField("teardownExecutor", PausedExecutorService())
         CarPlayBackgroundSession::class.java.getDeclaredField("owner").apply { isAccessible = true }
