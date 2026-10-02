@@ -114,6 +114,7 @@ class CarPlayHostSizeSettingTest {
     private fun select(size: CarPlaySize, resolution: Int = 10) {
         AirPlayPersistence.saveWidthPhysicalMm(activity, size.widthMillimeters)
         AirPlayPersistence.saveDisplayScaleTenths(activity, resolution)
+        AirPlayPersistence.saveFps(activity, 60)
         activity.javaClass.getDeclaredMethod("loadPersistedSettings").apply { isAccessible = true }.invoke(activity)
     }
 

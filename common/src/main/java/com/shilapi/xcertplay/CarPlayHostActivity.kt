@@ -310,7 +310,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var model = AirPlayPersistence.DEFAULT_MODEL
     private var oemLabel = AirPlayPersistence.DEFAULT_OEM_LABEL
     private var fps = AirPlayDisplaySettings.DEFAULT_FPS
-    private var widthPhysicalMm = AirPlayDisplaySettings.DEFAULT_WIDTH_PHYSICAL_MM
+    private var widthPhysicalMm = CarPlaySize.DEFAULT.widthMillimeters
     private var physicalSizeBasis = AirPlayDisplaySettings.DEFAULT_PHYSICAL_SIZE_BASIS
     private var maximumDetectedWidthPixels = 0
     private var maximumDetectedHeightPixels = 0
