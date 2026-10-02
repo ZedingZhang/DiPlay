@@ -2895,10 +2895,16 @@ class CarPlayHostActivity : ComponentActivity() {
             manufacturer = normalizedManufacturer(),
             model = normalizedModel(),
             oemLabel = oemLabel,
-            icons = listOf(loadAirPlayIcon()),
+            icons = if (hasBydCarUi()) listOf(loadAirPlayIcon()) else emptyList(),
             videoInCar = com.shilapi.xcertplay.hud.BydOutputSettings.videoWhileParked(this),
         )
     }
+
+    private fun hasBydCarUi(): Boolean =
+        Build.MANUFACTURER.startsWith("BYD", ignoreCase = true) ||
+            Build.BRAND.startsWith("BYD", ignoreCase = true) ||
+            Build.FINGERPRINT.startsWith("BYD-AUTO/", ignoreCase = true) ||
+            com.shilapi.xcertplay.hud.BydOutputSettings.available(this)
 
     private fun loadAirPlayIcon(): AirPlayIcon {
         val customBytes = try {
