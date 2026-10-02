@@ -6,6 +6,12 @@ For channel memory, connect until authenticated CarPlay renders, disconnect and 
 
 Include head-unit model, DiLink/Android, iPhone/iOS, wired/wireless, app version and exact steps. Do not post credentials or unreviewed personal information. See [compatibility](COMPATIBILITY.md) for remaining limitations.
 
+## CarPlay size settings
+
+Connect until CarPlay renders. In Settings > Display and performance, select Large, Medium, then Small, applying each change and allowing the reconnect to finish. Compare icons and text on the same CarPlay screen, and check touch targets near all four corners. Repeat at 80% resolution and in portrait orientation, then return to Medium at native resolution.
+
+The diagnostic report must name the selected preset and request a different canvas for each size. For a 2250x1080 surface at native resolution, Large requests 1956x940, Medium 2250x1080, and Small 2648x1270. Small requires hardware decoder support for the enlarged canvas and selected frame rate. If unsupported, the effective canvas falls back to Medium with an explicit reason in the report; the saved Small preference remains available for the next connection or a lower resolution. Rotating the display and camera-window resizing must continue to map touch to the negotiated canvas.
+
 ## Rotation during reconnect
 
 On an Android device that supports screen rotation, connect until CarPlay renders, then rotate from landscape to portrait and back while the connection is rebuilding. Repeat in both directions, including several quick rotations and a 180-degree turn. Let the device settle after the last rotation and check that the CarPlay picture has the correct aspect ratio and that touch targets match the displayed controls.

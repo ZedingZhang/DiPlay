@@ -56,6 +56,7 @@ import com.shilapi.xcertplay.airplay.AirPlayPhysicalSizeBasis
 import com.shilapi.xcertplay.airplay.AirPlayPhysicalSizeMm
 import com.shilapi.xcertplay.airplay.CarPlayDisplayScale
 import com.shilapi.xcertplay.airplay.CarPlayUiScale
+import com.shilapi.xcertplay.airplay.CarPlaySize
 import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.airplay.AirPlayIcon
@@ -297,7 +298,6 @@ class CarPlayHostActivity : ComponentActivity() {
     private var sessionDisplay: CarPlaySessionDisplay? = null
     private var touchOutsideContent = false
     private var displayScaleTenths = CarPlayDisplayScale.DEFAULT_TENTHS
-    private var uiScalePercent = CarPlayUiScale.DEFAULT
     private var displayDiagnosticAttempt: String? = null
     private var hevcEnabled = true
     private var hevcSoftwareDecoderEnabled = false
@@ -310,7 +310,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var model = AirPlayPersistence.DEFAULT_MODEL
     private var oemLabel = AirPlayPersistence.DEFAULT_OEM_LABEL
     private var fps = AirPlayDisplaySettings.DEFAULT_FPS
-    private var widthPhysicalMm = AirPlayDisplaySettings.DEFAULT_WIDTH_PHYSICAL_MM
+    private var widthPhysicalMm = CarPlaySize.DEFAULT.widthMillimeters
     private var physicalSizeBasis = AirPlayDisplaySettings.DEFAULT_PHYSICAL_SIZE_BASIS
     private var maximumDetectedWidthPixels = 0
     private var maximumDetectedHeightPixels = 0
@@ -474,8 +474,6 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun loadPersistedSettings() {
         displayScaleTenths = AirPlayPersistence.loadDisplayScaleTenths(this)
-        // Size is now chosen only through CarPlaySize; ignore the canvas scale older builds stored.
-        uiScalePercent = CarPlayUiScale.DEFAULT
         hevcEnabled = AirPlayPersistence.loadHevcEnabled(this)
         hevcSoftwareDecoderEnabled =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
@@ -2728,7 +2726,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val resolution = if (native == null) {
             getString(R.string.handshake_resolution_waiting_for_display)
         } else {
-            val negotiated = CarPlayDisplayScale.apply(
+            val resolutionDisplay = CarPlayDisplayScale.apply(
                 AirPlayDisplayConfig(
                     widthPixels = native.width,
                     heightPixels = native.height,
@@ -2736,6 +2734,9 @@ class CarPlayHostActivity : ComponentActivity() {
                     fps = fps,
                 ),
                 displayScaleTenths,
+            )
+            val negotiated = CarPlayUiScale.apply(
+                resolutionDisplay, CarPlaySize.fromWidthMillimeters(widthPhysicalMm).uiScalePercent,
             )
             "${getString(R.string.resolution_handshake_prefix)}${native.width} x ${native.height} -> " +
                 "${negotiated.widthPixels} x ${negotiated.heightPixels}"
@@ -2836,26 +2837,28 @@ class CarPlayHostActivity : ComponentActivity() {
             fps = fps,
         )
         val resolutionDisplay = CarPlayDisplayScale.apply(baseDisplay, displayScaleTenths)
-        val requestedPercent = uiScalePercent
-        var scaledDisplay = CarPlayUiScale.apply(resolutionDisplay, uiScalePercent)
+        val requestedSize = CarPlaySize.fromWidthMillimeters(widthPhysicalMm)
+        val requestedPercent = requestedSize.uiScalePercent
+        var effectivePercent = requestedPercent
+        var scaledDisplay = CarPlayUiScale.apply(resolutionDisplay, requestedPercent)
         val candidate = scaledDisplay
         val support = when {
-            uiScalePercent >= CarPlayUiScale.DEFAULT -> CanvasSupport(true, "not_enlarging", "Decoder capability enlargement check not required")
+            requestedPercent >= CarPlayUiScale.DEFAULT -> CanvasSupport(true, "not_enlarging", "Decoder capability enlargement check not required")
             scaledDisplay === resolutionDisplay -> CanvasSupport(false, "canvas_4k_limit", "Decoder capability check skipped: canvas exceeds enlargement limit")
             else -> largerCanvasSupport(scaledDisplay)
         }
         if (!support.supported) {
             scaledDisplay = resolutionDisplay
-            uiScalePercent = CarPlayUiScale.DEFAULT
-            AirPlayPersistence.saveUiScalePercent(this, uiScalePercent)
-            appendLog("Larger CarPlay canvas unavailable reason=${support.reason}; using Default icon and text size")
+            effectivePercent = CarPlayUiScale.DEFAULT
+            appendLog("Larger CarPlay canvas unavailable reason=${support.reason}; using Medium canvas for requested ${requestedSize.label} size")
             runOnUiThread {
                 android.widget.Toast.makeText(this,
                     getString(R.string.this_head_unit_cannot_use_the_smaller_size_at_this_resolut),
                     android.widget.Toast.LENGTH_LONG).show()
             }
         }
-        appendLog("CarPlay size=${CarPlayUiScale.label(uiScalePercent)} canvas=${scaledDisplay.widthPixels}x${scaledDisplay.heightPixels}")
+        val effectiveSize = if (support.supported) requestedSize else CarPlaySize.MEDIUM
+        appendLog("CarPlay size=${requestedSize.label} effective=${effectiveSize.label} canvas=${scaledDisplay.widthPixels}x${scaledDisplay.heightPixels}")
         val display = scaledDisplay.copy(
             safeArea = AirPlaySafeArea.toInsets(
                 mapping = AirPlayPersistence.loadSafeAreaRect(this, size.width, size.height),
@@ -2866,12 +2869,12 @@ class CarPlayHostActivity : ComponentActivity() {
             ),
             safeAreaDrawOutside = safeAreaDrawOutside,
         )
-        val requestSummary = "Display request selected=${CarPlayUiScale.label(requestedPercent)} percent=$requestedPercent " +
+        val requestSummary = "Display request selected=${requestedSize.label} percent=$requestedPercent " +
             "surface=${size.width}x${size.height} resolution=${displayScaleTenths * 10}% " +
             "base=${resolutionDisplay.widthPixels}x${resolutionDisplay.heightPixels} " +
             "candidate=${candidate.widthPixels}x${candidate.heightPixels} fps=$fps " +
             "codec=${if (hevcEnabled) "HEVC" else "H.264"} softwareHevc=$hevcSoftwareDecoderEnabled"
-        val effectiveSummary = "Display effective percent=$uiScalePercent " +
+        val effectiveSummary = "Display effective size=${effectiveSize.label} percent=$effectivePercent " +
             "canvas=${display.widthPixels}x${display.heightPixels} decision=${support.reason} " +
             "physical=${physical.widthMm}x${physical.heightMm}mm safeArea=${display.safeArea} " +
             "drawOutside=${display.safeAreaDrawOutside}"
