@@ -1,9 +1,11 @@
 package com.shilapi.xcertplay
 
 import android.app.AlertDialog
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
+import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -18,6 +20,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowAlertDialog
@@ -74,6 +77,13 @@ class DiPlayLandscapeLayoutTest {
         val dialog = ShadowAlertDialog.getLatestAlertDialog()
         dialog.listView.performItemClick(null, 1, 1L)
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(8, AirPlayPersistence.loadDisplayScaleTenths(activity))
+        resolution.performClick()
+        val cancelled = ShadowAlertDialog.getLatestAlertDialog()
+        cancelled.listView.performItemClick(null, 2, 2L)
+        cancelled.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
         assertEquals(8, AirPlayPersistence.loadDisplayScaleTenths(activity))
         scroll.scrollTo(0, scroll.getChildAt(0).height)
         assertTrue(scroll.scrollY > 0)
@@ -115,12 +125,13 @@ class DiPlayLandscapeLayoutTest {
     @Test fun largerEnglishTextCanWrapWithoutClippingButtons() {
         RuntimeEnvironment.setQualifiers("en-w800dp-h393dp-land-xhdpi")
         create()
-        val config = activity.resources.configuration
-        config.fontScale = 1.3f
+        val config = Configuration(activity.resources.configuration).apply { fontScale = 1.3f }
         @Suppress("DEPRECATION")
         activity.resources.updateConfiguration(config, activity.resources.displayMetrics)
         render()
         val root = layout()
+        assertEquals(1.3f, activity.resources.displayMetrics.scaledDensity /
+            activity.resources.displayMetrics.density, .01f)
         buttons(root).filter { it.visibility == View.VISIBLE }.forEach { button ->
             assertTrue(button.height >= dp(48))
             val text = requireNotNull(button.layout)
