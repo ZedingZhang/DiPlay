@@ -47,6 +47,11 @@ import kotlin.math.roundToInt
 
 /** DiAuto's visual language, with a connection flow for an independent CarPlay receiver. */
 class DiPlayActivity : ComponentActivity() {
+    // Short landscape windows need phone-sized controls even below the car UI's 850dp width.
+    private val compactLandscape: Boolean get() = resources.configuration.let {
+        it.screenHeightDp in 1 until 480 && it.screenWidthDp > it.screenHeightDp
+    }
+    private val compactColumns: Boolean get() = compactLandscape && resources.configuration.screenWidthDp >= 600
     private val handler = Handler(Looper.getMainLooper())
     private var page = "home"
     private var pendingCarHotspotSetup = false
@@ -162,28 +167,50 @@ class DiPlayActivity : ComponentActivity() {
     private fun render() {
         status = null; connectButton = null; disconnectButton = null; lastRunning = null
         val scroll = ScrollView(this).apply { setBackgroundColor(BG); isFillViewport = true; clipToPadding = false }
-        val content = column().apply { setPadding(dp(32), dp(24), dp(32), dp(32)) }
+        val compact = compactLandscape
+        val content = column().apply {
+            if (compact) setPadding(dp(12), dp(8), dp(12), dp(12))
+            else setPadding(dp(32), dp(24), dp(32), dp(32))
+        }
         scroll.addView(content)
         val header = row().apply { gravity = Gravity.CENTER_VERTICAL }
-        header.addView(ImageView(this).apply { setImageResource(R.drawable.ic_carplay); contentDescription = getString(R.string.carplay) }, LinearLayout.LayoutParams(dp(36), dp(36)))
-        header.addView(label(getString(R.string.diplay), 26, TEXT, true).apply { setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, dp(56), 1f))
+        header.addView(ImageView(this).apply { setImageResource(R.drawable.ic_carplay); contentDescription = getString(R.string.carplay) }, LinearLayout.LayoutParams(dp(if (compact) 28 else 36), dp(if (compact) 28 else 36)))
+        header.addView(label(getString(R.string.diplay), 26, TEXT, true).apply { setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, dp(if (compact) 48 else 56), 1f))
+        if (compact && page != "settings") {
+            header.addView(button(getString(R.string.settings), false) { page = "settings"; render() },
+                LinearLayout.LayoutParams(dp(112), -2).apply { marginEnd = dp(8) })
+        }
         header.addView(button(if (page == "home") getString(R.string.car_home) else getString(R.string.back), false) {
             if (page == "home") startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME))
             else { page = "home"; render() }
-        }, LinearLayout.LayoutParams(dp(130), dp(56)))
-        content.addView(header)
-        content.addView(space(24))
+        }, LinearLayout.LayoutParams(dp(if (compact) 112 else 130), if (compact) -2 else dp(56)))
+        if (!compact) {
+            content.addView(header)
+            content.addView(space(24))
+        }
         when (page) {
             "connection" -> connectionSetup(content)
             "settings" -> settings(content)
             "about" -> about(content)
             else -> home(content)
         }
-        setContentView(scroll)
+        if (compact) {
+            val root = column().apply {
+                setBackgroundColor(BG)
+                layoutParams = ViewGroup.LayoutParams(-1, -1)
+            }
+            root.addView(header.apply { setPadding(dp(12), dp(4), dp(12), dp(4)) })
+            root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+            setContentView(root)
+        } else setContentView(scroll)
         refreshStatus()
     }
 
     private fun home(content: LinearLayout) {
+        if (compactLandscape) {
+            compactHome(content)
+            return
+        }
         val wide = resources.configuration.screenWidthDp >= 850
         val body = column()
         val left = column()
@@ -253,6 +280,55 @@ class DiPlayActivity : ComponentActivity() {
         }
         setupError?.let { body.addView(label(it, 16, WARNING).apply { setPadding(0, dp(16), 0, 0) }) }
         content.addView(body)
+    }
+
+    private fun compactHome(content: LinearLayout) {
+        val wireless = card()
+        wireless.addView(label(getString(R.string.wireless_carplay), 14, ACCENT, true))
+        status = label(getString(R.string.ready_when_you_are), 22, TEXT, true).apply {
+            setPadding(0, dp(4), 0, dp(8))
+        }
+        wireless.addView(status)
+        connectButton = button(getString(R.string.connect_phone), true) {
+            if (CarPlayBackgroundSession.hasSession()) openProjection() else connect(true)
+        }
+        wireless.addView(connectButton, matchButton())
+        val phoneActions = row().apply { gravity = Gravity.CENTER_VERTICAL }
+        phoneActions.addView(button(getString(R.string.choose_iphone), false) { choosePhone() },
+            LinearLayout.LayoutParams(0, -2, 1f))
+        disconnectButton = button(getString(R.string.disconnect), false) {
+            disconnectButton?.isEnabled = false
+            CarPlayBackgroundSession.stop { runOnUiThread { refreshStatus() } }
+        }.apply { visibility = View.GONE }
+        phoneActions.addView(disconnectButton, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(8) })
+        wireless.addView(phoneActions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        if (carHotspotOff()) {
+            wireless.addView(label(getString(R.string.msg_car_hotspot_off, AirPlayPersistence.loadManualHotspotSsid(this)), 14, WARNING))
+            wireless.addView(button(getString(R.string.open_car_hotspot_settings), false) { openCarWifiSettings() }, matchButton(8))
+        }
+
+        val actions = card()
+        actions.addView(button(getString(R.string.connect_with_usb), false) { connect(false) }, matchButton())
+        actions.addView(label(getString(R.string.plug_your_iphone_into_a_usb_data_port_allow_carplay_when_y), 14, MUTED).apply {
+            setPadding(0, dp(6), 0, dp(8))
+        })
+        actions.addView(button(getString(R.string.connection_setup), false) { page = "connection"; render() }, matchButton(4))
+        actions.addView(button(getString(R.string.settings), false) { page = "settings"; render() }, matchButton(8))
+        actions.addView(label("${getString(R.string.home_public_preview)}${version()}", 12, MUTED).apply {
+            setPadding(0, dp(8), 0, 0)
+        })
+        if (compactColumns) {
+            content.addView(row().apply {
+                gravity = Gravity.TOP
+                addView(wireless, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(actions, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12) })
+            })
+        } else {
+            content.addView(wireless)
+            content.addView(space(12))
+            content.addView(actions)
+        }
+        setupError?.let { content.addView(label(it, 16, WARNING).apply { setPadding(0, dp(8), 0, 0) }) }
     }
 
     private fun settings(content: LinearLayout) {
@@ -561,7 +637,7 @@ class DiPlayActivity : ComponentActivity() {
             getString(R.string.hotspot_mode_manual_desc),
             getString(R.string.hotspot_mode_p2p_desc)
         )
-        val wide = resources.configuration.screenWidthDp >= 850
+        val wide = resources.configuration.screenWidthDp >= 850 || compactColumns
         val choices = if (wide) row().apply { gravity = Gravity.TOP } else column()
         parent.addView(choices)
         modes.forEachIndexed { index, candidate ->
@@ -1184,7 +1260,7 @@ class DiPlayActivity : ComponentActivity() {
 
     private fun section(parent: LinearLayout, title: String, icon: Int? = null, build: (LinearLayout) -> Unit) {
         val card = card()
-        val heading = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(16)) }
+        val heading = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(if (compactLandscape) 8 else 16)) }
         if (icon != null) heading.addView(ImageView(this).apply {
             setImageResource(icon); imageTintList = ColorStateList.valueOf(ACCENT)
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -1192,13 +1268,13 @@ class DiPlayActivity : ComponentActivity() {
         heading.addView(label(title, 22, TEXT, true), LinearLayout.LayoutParams(0, -2, 1f))
         card.addView(heading)
         build(card)
-        parent.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
+        parent.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(if (compactLandscape) 10 else 18) })
     }
     private fun toggle(parent: LinearLayout, title: String, description: String, value: Boolean, save: (Boolean) -> Unit) {
-        val line = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(12), 0, dp(12)) }
-        val text = column(); text.addView(label(title, 18, TEXT, true)); text.addView(label(description, 14, MUTED).apply { setPadding(0, dp(6), dp(16), 0) })
+        val line = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(if (compactLandscape) 6 else 12), 0, dp(if (compactLandscape) 6 else 12)) }
+        val text = column(); text.addView(label(title, 18, TEXT, true)); text.addView(label(description, 14, MUTED).apply { setPadding(0, dp(if (compactLandscape) 2 else 6), dp(16), 0) })
         line.addView(text, LinearLayout.LayoutParams(0, -2, 1f))
-        line.addView(Switch(this).apply { contentDescription = title; isChecked = value; minHeight = dp(56); buttonTintList = ColorStateList.valueOf(ACCENT); setOnCheckedChangeListener { _, checked -> save(checked) } })
+        line.addView(Switch(this).apply { contentDescription = title; isChecked = value; minHeight = dp(if (compactLandscape) 48 else 56); buttonTintList = ColorStateList.valueOf(ACCENT); setOnCheckedChangeListener { _, checked -> save(checked) } })
         parent.addView(line)
     }
     private fun choice(parent: LinearLayout, title: String, options: List<String>, current: Int, reconnects: Boolean = true, save: (Int) -> Unit) {
@@ -1219,26 +1295,48 @@ class DiPlayActivity : ComponentActivity() {
                     }
                 }.setNegativeButton(getString(R.string.cancel), null).show()
         }
-        parent.addView(button, matchButton(0, 60)); parent.addView(space(12))
+        if (compactColumns) {
+            val previous = parent.getChildAt(parent.childCount - 1) as? LinearLayout
+            val controls = if (previous?.tag == "compactChoices" && previous.childCount == 1) previous else row().apply {
+                tag = "compactChoices"
+                parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+            }
+            controls.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                if (controls.childCount > 0) marginStart = dp(8)
+            })
+        } else {
+            parent.addView(button, matchButton(0, 60)); parent.addView(space(12))
+        }
     }
-    private fun card() = column().apply { background = rounded(SURFACE, BORDER); setPadding(dp(24), dp(24), dp(24), dp(24)) }
+    private fun card() = column().apply {
+        background = rounded(SURFACE, BORDER)
+        val padding = dp(if (compactLandscape) 12 else 24)
+        setPadding(padding, padding, padding, padding)
+    }
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
     private fun label(value: String, size: Int, color: Int, bold: Boolean = false) = TextView(this).apply {
-        text = value; textSize = size.toFloat(); setTextColor(color); gravity = Gravity.CENTER_VERTICAL
+        text = value; textSize = (if (compactLandscape) when {
+            size >= 30 -> 24
+            size >= 22 -> 20
+            size >= 18 -> 16
+            else -> size
+        } else size).toFloat(); setTextColor(color); gravity = Gravity.CENTER_VERTICAL
         typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.create("sans-serif", Typeface.NORMAL)
-        setLineSpacing(dp(3).toFloat(), 1f)
+        setLineSpacing(dp(if (compactLandscape) 1 else 3).toFloat(), 1f)
     }
     private fun button(title: String, primary: Boolean, click: () -> Unit) = Button(this).apply {
-        text = title; isAllCaps = false; textSize = 18f; setTextColor(if (primary) BG else TEXT)
+        text = title; isAllCaps = false; textSize = if (compactLandscape) 16f else 18f; setTextColor(if (primary) BG else TEXT)
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         background = android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x336F9FD9), rounded(if (primary) ACCENT else SURFACE, if (primary) ACCENT else BORDER), null)
-        setPadding(dp(16), 0, dp(16), 0); minHeight = dp(56); stateListAnimator = null
+        setPadding(dp(if (compactLandscape) 12 else 16), dp(if (compactLandscape) 4 else 0), dp(if (compactLandscape) 12 else 16), dp(if (compactLandscape) 4 else 0)); minHeight = dp(if (compactLandscape) 48 else 56); stateListAnimator = null
         setOnClickListener { click() }
     }
     private fun rounded(color: Int, stroke: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(20).toFloat(); setStroke(dp(1), stroke) }
-    private fun matchButton(top: Int = 0, height: Int = 68) = LinearLayout.LayoutParams(-1, dp(height)).apply { topMargin = dp(top) }
-    private fun space(height: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(1, dp(height)) }
+    private fun matchButton(top: Int = 0, height: Int = 68) = LinearLayout.LayoutParams(-1, if (compactLandscape) -2 else dp(height)).apply {
+        topMargin = dp(if (compactLandscape) top.coerceAtMost(8) else top)
+    }
+    private fun space(height: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(1, dp(if (compactLandscape) (height / 2).coerceAtMost(12) else height)) }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     companion object {
         private val BG = Color.rgb(12, 17, 27)

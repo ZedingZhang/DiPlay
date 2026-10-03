@@ -6,6 +6,12 @@ For channel memory, connect until authenticated CarPlay renders, disconnect and 
 
 Include head-unit model, DiLink/Android, iPhone/iOS, wired/wireless, app version and exact steps. Do not post credentials or unreviewed personal information. See [compatibility](COMPATIBILITY.md) for remaining limitations.
 
+## Phone landscape UI
+
+On Xiaomi Mi 10 / Android 11, open the Chinese home screen in landscape with the default font size, both disconnected and with CarPlay connected. Wireless connect/open CarPlay, choose iPhone, disconnect, USB, connection setup and settings should fit above the fold in a short window at least 600dp wide. On shorter landscape windows below 600dp wide, cards stack and remain scrollable. Larger fonts may require scrolling, but button labels should wrap and touch targets remain at least 48dp high.
+
+Open Settings and Connection setup. Check the denser spacing and side-by-side choices, scroll to the bottom and confirm the top Back button remains visible. Change resolution, cancel another choice, switch connection mode and verify the same saved values and reconnect behavior as before. Rotate on each page; the current page should remain open and portrait should return to the normal layout. Check a car-sized landscape window at least 480dp high still has the original large controls. Native Android 11 layout tests export Chinese home/settings and enlarged English text previews with the CI test reports.
+
 ## CarPlay OEM return icon
 
 On a non-BYD device such as Xiaomi Mi 10 / Android 11, connect or fully reconnect and open the CarPlay app grid. The BYD return tile should be absent, including when the device previously used a build that advertised the BYD icon. In the AirPlay `/info` log, `oemIconVisible` should be false and `oemIcons` and `oemIconLabel` should be absent. On a BYD head unit, confirm the return tile still appears and opens the car home screen; a configured custom image should still be used.
