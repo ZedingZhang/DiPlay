@@ -9,6 +9,7 @@ import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import com.shilapi.xcertplay.network.P2pResetRequiredException
+import com.shilapi.xcertplay.network.P2pUnavailableException
 import com.shilapi.xcertplay.network.WifiP2pGroupManager
 import org.junit.Assert.*
 import org.junit.Before
@@ -327,6 +328,43 @@ class WifiP2pGroupManagerTest {
         assertEquals(0, radio.removals)
     }
 
+    @Test @Config(sdk = [30]) fun disabledP2pWithWifiOnStopsBeforeChannelRequestsOrGroupRemoval() {
+        radio.p2pState = WifiP2pManager.WIFI_P2P_STATE_DISABLED
+        WifiP2pGroupManager(context).use { manager ->
+            val error = failure { manager.start(3000) }
+            assertTrue(error is P2pUnavailableException)
+            assertTrue(error.message!!.contains("personal hotspot"))
+        }
+        assertTrue(radio.requests.isEmpty())
+        assertEquals(0, radio.removals)
+    }
+
+    @Test fun p2pDisabledDuringBusyRecoveryStopsWithoutTryingOtherChannels() {
+        radio.disableOnCreate = true
+        WifiP2pGroupManager(context).use { manager ->
+            assertTrue(failure { manager.start(3000) } is P2pUnavailableException)
+        }
+        assertEquals(1, radio.requests.size)
+        assertEquals(0, radio.removals)
+    }
+
+    @Test @Config(sdk = [30]) fun groupOwnerAddressIsQueriedBeforeAdvertisingReady() {
+        WifiP2pGroupManager(context).use { manager ->
+            val hotspot = background { manager.start(3000) }
+            assertEquals(InetAddress.getByName("192.168.49.1"), hotspot.hostAddress)
+            assertEquals(1, radio.connectionQueries)
+        }
+    }
+
+    @Test fun anUnformedConnectionCannotStartBluetoothEvenWithCompleteGroupInfo() {
+        radio.groupFormed = false
+        WifiP2pGroupManager(context).use { manager ->
+            assertTrue(failure { manager.start(500) }.message!!.contains("owner not ready"))
+        }
+        assertTrue(radio.connectionQueries > 0)
+        assertEquals(1, radio.removals)
+    }
+
     private fun failure(block: () -> Any): Throwable {
         try { background(block); fail("Expected failure") }
         catch (failure: ExecutionException) { return failure.cause!! }
@@ -357,9 +395,13 @@ class WifiP2pGroupManagerTest {
         var fixed24Only = false
         var allowed24 = setOf(2412, 2437, 2462)
         var reportedFrequency: Int? = null
+        var p2pState = WifiP2pManager.WIFI_P2P_STATE_ENABLED
+        var disableOnCreate = false
+        var connectionQueries = 0
+        var groupFormed = true
 
         @Implementation protected fun requestP2pState(channel: WifiP2pManager.Channel, listener: WifiP2pManager.P2pStateListener) {
-            listener.onP2pStateAvailable(WifiP2pManager.WIFI_P2P_STATE_ENABLED)
+            listener.onP2pStateAvailable(p2pState)
         }
 
         @Implementation override fun requestGroupInfo(channel: WifiP2pManager.Channel, listener: WifiP2pManager.GroupInfoListener) {
@@ -367,8 +409,9 @@ class WifiP2pGroupManagerTest {
         }
 
         @Implementation override fun requestConnectionInfo(channel: WifiP2pManager.Channel, listener: WifiP2pManager.ConnectionInfoListener) {
+            connectionQueries++
             listener.onConnectionInfoAvailable(WifiP2pInfo().apply {
-                groupFormed = true
+                groupFormed = this@P2pRadio.groupFormed
                 isGroupOwner = true
                 groupOwnerAddress = InetAddress.getByName("192.168.49.1")
             })
@@ -376,6 +419,11 @@ class WifiP2pGroupManagerTest {
 
         @Implementation override fun createGroup(channel: WifiP2pManager.Channel, config: WifiP2pConfig?, listener: WifiP2pManager.ActionListener) {
             requests += config
+            if (disableOnCreate) {
+                p2pState = WifiP2pManager.WIFI_P2P_STATE_DISABLED
+                listener.onFailure(WifiP2pManager.BUSY)
+                return
+            }
             if (noCreateReply) return
             if ((rejectCustom && config != null) || (fixed24Only && config?.groupOwnerBand !in allowed24)) {
                 if (competingGroup) group = makeGroup(null)

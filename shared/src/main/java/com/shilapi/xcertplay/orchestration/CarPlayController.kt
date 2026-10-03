@@ -118,8 +118,15 @@ sealed class CarPlayStatus {
     data object AttachingNetwork : CarPlayStatus()
     data object RunningControl : CarPlayStatus()
     data object ControlEnded : CarPlayStatus()
-    data class Failed(val message: String, val wifiResetRequired: Boolean = false) : CarPlayStatus()
+    data class Failed(val message: String, val wifiResetRequired: Boolean = false,
+        val wifiSettingsRequired: Boolean = false) : CarPlayStatus()
 }
+
+internal fun carPlayFailureStatus(error: Throwable) = CarPlayStatus.Failed(
+    error.message ?: error.javaClass.simpleName,
+    generateSequence(error) { it.cause }.any { it is com.shilapi.xcertplay.network.P2pResetRequiredException },
+    generateSequence(error) { it.cause }.any { it is com.shilapi.xcertplay.network.P2pUnavailableException },
+)
 
 internal fun isWirelessHandoffInProgress(
     handoffRequested: Boolean,
@@ -2130,8 +2137,7 @@ class CarPlayController(
 
     private fun fail(error: Throwable) {
         if (closed) return
-        onStatus(CarPlayStatus.Failed(error.message ?: error.javaClass.simpleName,
-            generateSequence(error) { it.cause }.any { it is com.shilapi.xcertplay.network.P2pResetRequiredException }))
+        onStatus(carPlayFailureStatus(error))
     }
 
     private fun debugLog(message: String) {

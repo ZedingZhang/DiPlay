@@ -3169,7 +3169,20 @@ class CarPlayHostActivity : ComponentActivity() {
             val description = status.describe()
             setConnectionStage(description)
             when (status) {
-                is CarPlayStatus.Failed -> if (status.wifiResetRequired) {
+                is CarPlayStatus.Failed -> if (status.wifiSettingsRequired) {
+                    (wifiRecoveryButton as? Button)?.apply {
+                        text = getString(R.string.open_wireless_settings)
+                        visibility = View.VISIBLE
+                        setOnClickListener {
+                            runCatching { startActivity(Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)) }
+                                .onFailure { showDiPlayHome("wireless-recovery") }
+                        }
+                    }
+                } else if (status.wifiResetRequired) {
+                    (wifiRecoveryButton as? Button)?.apply {
+                        text = getString(R.string.reset_carplay_wi_fi)
+                        setOnClickListener { showDiPlayHome("wireless-recovery") }
+                    }
                     wifiRecoveryButton?.visibility = View.VISIBLE
                 } else {
                     wifiRecoveryButton?.visibility = View.GONE
@@ -3759,6 +3772,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun friendlyStage(message: String): String = when {
+        message == getString(R.string.wifi_direct_unavailable) -> message
         message.contains("Turn on Wi-Fi", true) -> getString(R.string.turn_on_wi_fi_in_the_head_unit_s_settings_to_connect)
         message.contains("Allow precise Location", true) -> getString(R.string.allow_precise_location_for_diplay_in_the_head_unit_s_app_p)
         message.contains("Allow Nearby devices", true) -> getString(R.string.allow_nearby_devices_for_diplay_in_the_head_unit_s_app_per)
@@ -3868,7 +3882,8 @@ class CarPlayHostActivity : ComponentActivity() {
             if (wirelessEnabled) getString(R.string.starting_airplay_service) else getString(R.string.status_attaching_ncm)
         CarPlayStatus.RunningControl -> getString(R.string.carplay_control_running)
         CarPlayStatus.ControlEnded -> getString(R.string.carplay_control_window_ended)
-        is CarPlayStatus.Failed -> getString(R.string.status_failed, message)
+        is CarPlayStatus.Failed -> if (wifiSettingsRequired) getString(R.string.wifi_direct_unavailable)
+            else getString(R.string.status_failed, message)
     }
 
     private companion object {

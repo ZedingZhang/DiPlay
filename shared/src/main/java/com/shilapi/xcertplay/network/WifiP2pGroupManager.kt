@@ -19,14 +19,9 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import com.shilapi.xcertplay.transport.Iap2WirelessSecurity
 import java.io.IOException
-import java.net.Inet4Address
-import java.net.Inet6Address
-import java.net.InetAddress
 import java.net.NetworkInterface
 import java.net.SocketException
-import java.net.UnknownHostException
 import java.security.SecureRandom
-import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -115,7 +110,7 @@ class WifiP2pGroupManager(
                 callbackThread = thread
             }
 
-            logP2pState(attempt, p2pChannel)
+            checkP2pState(attempt, p2pChannel)
             // Preferences disappear on reinstall, but the scoped namespace survives.
             val existing = requestGroupInfo(attempt, p2pChannel, REQUEST_POLL_NANOS, requireResponse = true)
             diagnostic("Wi-Fi P2P existingGroup=${existing != null}")
@@ -143,6 +138,7 @@ class WifiP2pGroupManager(
                     synchronized(stateLock) { waitNanos(TimeUnit.MILLISECONDS.toNanos(500)) }
                     ensureStartActive(attempt)
                     checkPrerequisites(readStation())
+                    checkP2pState(attempt, p2pChannel)
                     if (requestGroupInfo(attempt, p2pChannel, REQUEST_POLL_NANOS, requireResponse = true) != null) {
                         throw P2pResetRequiredException()
                     }
@@ -380,16 +376,21 @@ class WifiP2pGroupManager(
                 else -> throw IOException("Wi-Fi P2P returned an unsupported band at ${frequencyMHz}MHz")
             }
 
-            val hostAddress = awaitInterfaceAddress(attempt, interfaceName, deadlineNanos)
-                ?: requestConnectionAddress(
-                    attempt = attempt,
-                    channel = channel,
-                    timeoutNanos = minOf(remainingNanos(deadlineNanos), REQUEST_POLL_NANOS),
-                )
+            val connection = requestConnectionInfo(attempt, channel,
+                minOf(remainingNanos(deadlineNanos), REQUEST_POLL_NANOS))
+            val network = networkInterface(interfaceName)
+            val addresses = network?.inetAddresses?.toList().orEmpty()
+            val hostAddress = p2pGroupHostAddress(
+                connection?.groupFormed == true, connection?.isGroupOwner == true,
+                connection?.groupOwnerAddress, addresses, network?.index ?: 0)
             if (hostAddress == null) {
-                lastReason = "interface $interfaceName has no usable IPv6 or IPv4 address"
+                lastReason = "group owner not ready or interface $interfaceName has no usable address"
+                Thread.sleep(100)
                 continue
             }
+            val bssid = p2pGroupBssid(interfaceHardwareAddress(interfaceName), addresses,
+                group.owner?.deviceAddress)
+            diagnostic("Wi-Fi P2P endpoint source=${if (hostAddress == connection?.groupOwnerAddress) "framework_owner" else "group_interface"} family=${if (hostAddress is java.net.Inet4Address) "IPv4" else "IPv6"} identityAvailable=${bssid != null}")
 
             return WirelessHotspotInfo(
                 ssid = networkName,
@@ -397,8 +398,7 @@ class WifiP2pGroupManager(
                 security = groupSecurity(group),
                 channel = channelNumber,
                 frequencyMHz = frequencyMHz,
-                bssid = interfaceHardwareAddress(interfaceName)
-                    ?: group.owner?.deviceAddress?.takeIf { it.isNotBlank() },
+                bssid = bssid,
                 interfaceName = interfaceName,
                 hostAddress = hostAddress,
                 bandLabel = band,
@@ -433,11 +433,11 @@ class WifiP2pGroupManager(
         return result.get()
     }
 
-    private fun requestConnectionAddress(
+    private fun requestConnectionInfo(
         attempt: StartAttempt,
         channel: WifiP2pManager.Channel,
         timeoutNanos: Long,
-    ): InetAddress? {
+    ): WifiP2pInfo? {
         val result = AtomicReference<WifiP2pInfo?>()
         val latch = CountDownLatch(1)
         p2pManager.requestConnectionInfo(channel) {
@@ -446,9 +446,7 @@ class WifiP2pGroupManager(
         }
         if (!await(latch, timeoutNanos)) return null
         ensureStartActive(attempt)
-        val info = result.get() ?: return null
-        if (!info.groupFormed) return null
-        return info.groupOwnerAddress?.takeUnless(InetAddress::isAnyLocalAddress)
+        return result.get()
     }
 
     private fun await(latch: CountDownLatch, timeoutNanos: Long): Boolean = try {
@@ -457,41 +455,6 @@ class WifiP2pGroupManager(
     } catch (interrupted: InterruptedException) {
         Thread.currentThread().interrupt()
         throw IOException("Interrupted while waiting for Wi-Fi P2P", interrupted)
-    }
-
-    private fun interfaceAddress(interfaceName: String): InetAddress? {
-        val networkInterface = networkInterface(interfaceName) ?: return null
-        var ipv4: InetAddress? = null
-        for (address in Collections.list(networkInterface.inetAddresses)) {
-            if (address is Inet6Address && address.isLinkLocalAddress) {
-                if (address.scopeId == networkInterface.index) return address
-                try {
-                    return Inet6Address.getByAddress(null, address.address, networkInterface)
-                } catch (_: UnknownHostException) {
-                    continue
-                }
-            }
-            if (address is Inet4Address && !address.isLoopbackAddress && ipv4 == null) {
-                ipv4 = address
-            }
-        }
-        return ipv4
-    }
-
-    private fun awaitInterfaceAddress(
-        attempt: StartAttempt,
-        interfaceName: String,
-        startupDeadlineNanos: Long,
-    ): InetAddress? {
-        // Group creation precedes IPv6 link-local configuration on some head units.
-        // Give IPv6 a bounded chance to appear before falling back to IPv4.
-        val addressDeadline = minOf(startupDeadlineNanos, deadlineAfter(2_000))
-        while (true) {
-            ensureStartActive(attempt)
-            val address = interfaceAddress(interfaceName)
-            if (address is Inet6Address || remainingNanos(addressDeadline) <= 0) return address
-            Thread.sleep(100)
-        }
     }
 
     private data class Station(val state: SupplicantState?, val reportedFrequency: Int?) {
@@ -531,13 +494,14 @@ class WifiP2pGroupManager(
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun logP2pState(attempt: StartAttempt, channel: WifiP2pManager.Channel) {
+    private fun checkP2pState(attempt: StartAttempt, channel: WifiP2pManager.Channel) {
         val result = AtomicReference<Int?>()
         val latch = CountDownLatch(1)
         p2pManager.requestP2pState(channel) { state -> result.set(state); latch.countDown() }
         await(latch, REQUEST_POLL_NANOS)
         ensureStartActive(attempt)
         diagnostic("Wi-Fi P2P frameworkState=${result.get() ?: "unknown"}")
+        if (result.get() == WifiP2pManager.WIFI_P2P_STATE_DISABLED) throw P2pUnavailableException()
     }
 
     private fun interfaceHardwareAddress(interfaceName: String): String? =

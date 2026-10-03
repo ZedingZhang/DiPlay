@@ -14,6 +14,14 @@ On Xiaomi Mi 10 / Android 11, reconnect wirelessly, check picture/touch/music, m
 
 The manual standalone APK workflow verifies the published v0.2.10 APK digest before extracting its two runtime identity assets, and then checks the rebuilt package/version, APK signature, asset bytes and ARM64 libraries. Source-only CI retains its normal asset-free builds.
 
+## Phone Wi-Fi Direct connection
+
+On Xiaomi Mi 10 / Android 11, turn off the phone's personal hotspot and keep Wi-Fi and Bluetooth enabled. Select Wi-Fi Direct, reconnect and verify picture, touch and music. The report should contain `Wi-Fi P2P endpoint source=framework_owner family=IPv4` when Android supplies a usable GO IPv4 address. Verify disconnect/reconnect on both 2.4 GHz and 5 GHz where supported, and rotate while connected. Group creation or Bluetooth authentication alone does not count as success; check the first video frame.
+
+Switch to Manual hotspot, connect, then switch back to Wi-Fi Direct while the personal hotspot is still enabled. If Android reports P2P disabled, the app should stop channel retries and show a localized message and wireless settings button. Turn off the personal hotspot, leave Wi-Fi on, return and reconnect. If the vendor still reports P2P disabled, turn Wi-Fi off and on in system settings and retry. The app must not toggle the radio or delete another app's group automatically. Verify that an enabled P2P radio still receives bounded BUSY channel fallback, and Manual hotspot remains usable.
+
+The earlier report proves successful group creation/Bluetooth authentication followed by no AirPlay session, and later a disabled P2P radio with repeated BUSY failures. The address/identity changes are a compatibility fix to test on hardware; they are not proof that the iPhone joined the earlier group.
+
 ## Phone landscape UI
 
 On Xiaomi Mi 10 / Android 11, open the Chinese home screen in landscape with the default font size, both disconnected and with CarPlay connected. Wireless connect/open CarPlay, choose iPhone, disconnect, USB, connection setup and settings should fit above the fold in a short window at least 600dp wide. On shorter landscape windows below 600dp wide, cards stack and remain scrollable. Larger fonts may require scrolling, but button labels should wrap and touch targets remain at least 48dp high.

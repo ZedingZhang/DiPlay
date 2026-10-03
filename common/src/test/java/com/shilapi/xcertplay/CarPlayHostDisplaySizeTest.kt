@@ -6,11 +6,14 @@ import android.view.MotionEvent
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
+import android.widget.Button
+import android.widget.TextView
 import com.shilapi.xcertplay.airplay.*
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.media.CarPlayVideoLayout
 import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.orchestration.CarPlayRuntimeConfig
+import com.shilapi.xcertplay.orchestration.CarPlayStatus
 import com.shilapi.xcertplay.orchestration.MfiTarget
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
 import java.time.Duration
@@ -73,6 +76,28 @@ class CarPlayHostDisplaySizeTest {
         assertEquals(0, getField("restartGeneration"))
         assertFalse(getField("handshakeResetInProgress") as Boolean)
         assertEquals(2, keepLogs())
+    }
+
+    @Test fun disabledWifiDirectOffersSettingsAndDoesNotScheduleAutomaticReconnect() {
+        val button = Button(activity)
+        val stage = TextView(activity)
+        setField("wifiRecoveryButton", button)
+        setField("stageStatusView", stage)
+        @Suppress("UNCHECKED_CAST")
+        val report = activity.javaClass.getDeclaredMethod("createStatusReporter", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as (CarPlayStatus) -> Unit
+        report(CarPlayStatus.Failed("P2P disabled", wifiSettingsRequired = true))
+        assertFalse(getField("reconnectScheduled") as Boolean)
+        assertEquals(0, getField("reconnectAttempts"))
+        assertEquals(View.VISIBLE, button.visibility)
+        assertEquals(activity.getString(R.string.wifi_direct_unavailable), stage.text.toString())
+        button.performClick()
+        assertEquals(android.provider.Settings.ACTION_WIRELESS_SETTINGS,
+            shadowOf(activity).nextStartedActivity.action)
+        // Transient failures retain automatic recovery.
+        report(CarPlayStatus.Failed("transport interrupted"))
+        assertTrue(getField("reconnectScheduled") as Boolean)
+        assertEquals(View.GONE, button.visibility)
     }
 
     @Test fun aNarrowWindowIsNotTreatedAsScreenRotation() {
