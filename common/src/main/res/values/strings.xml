@@ -1,6 +1,8 @@
 <resources>
     <string name="built_in_car_hotspot">Built-in car hotspot</string>
     <string name="wifi_direct">Wi-Fi Direct</string>
+    <string name="wifi_direct_unavailable">Android has disabled Wi-Fi Direct. Turn off this device’s personal hotspot, keep Wi-Fi on, then reconnect. If needed, turn Wi-Fi off and on in system settings.</string>
+    <string name="open_wireless_settings">Open wireless settings</string>
     <string name="hotspot_hint_manual">Built-in car hotspot · Keep the car hotspot, Bluetooth and your iPhone’s Wi-Fi on.</string>
     <string name="hotspot_hint_local">Open Connection setup to save your built-in car hotspot details.</string>
     <string name="hotspot_hint_p2p">Wi-Fi Direct · Keep the car’s Wi-Fi switch, Bluetooth and your iPhone’s Wi-Fi on.</string>
@@ -478,4 +480,9 @@
     <string name="center_map_no_permission_screen">This head unit has no settings screen for this permission. Allow it over ADB.</string>
     <string name="launcher_map_sharing">Share the live map with other launchers</string>
     <string name="launcher_map_sharing_description">Launchers that support DiPlay can show the live dashboard map inside their own home screen. Off by default, because any app on the head unit could then ask for the map. See docs/LAUNCHER_INTEGRATION.md.</string>
+    <string name="wifi_direct_join_help">iPhone Wi-Fi connection help</string>
+    <string name="wifi_direct_join_instructions">Keep this DiPlay connection open. On iPhone, open Settings → Wi-Fi and join the network below using its current password. If iPhone warns that it has no Internet, stay connected. These credentials change when DiPlay reconnects. They are shown only here and are excluded from exported logs.</string>
+    <string name="wifi_direct_join_network">Network: %1$s</string>
+    <string name="wifi_direct_join_password">Password: %1$s</string>
+    <string name="wifi_direct_join_check">After joining, open the following address in iPhone Safari. If it shows “DiPlay network check OK”, the Wi-Fi link can reach DiPlay. Return to DiPlay and export the log whether or not CarPlay appears.\n%1$s</string>
 </resources>

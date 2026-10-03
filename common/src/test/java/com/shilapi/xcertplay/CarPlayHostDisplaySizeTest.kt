@@ -1,17 +1,25 @@
 package com.shilapi.xcertplay
 
 import android.graphics.Matrix
+import android.graphics.Rect
 import android.os.Looper
 import android.view.MotionEvent
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
+import android.widget.Button
+import android.widget.TextView
+import android.widget.ScrollView
 import com.shilapi.xcertplay.airplay.*
+import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.media.CarPlayVideoLayout
 import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.orchestration.CarPlayRuntimeConfig
+import com.shilapi.xcertplay.orchestration.CarPlayStatus
 import com.shilapi.xcertplay.orchestration.MfiTarget
+import com.shilapi.xcertplay.orchestration.WirelessJoinDetails
+import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
 import java.time.Duration
 import java.util.concurrent.ExecutorService
@@ -23,6 +31,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.MockedConstruction
 import org.mockito.Mockito.mockConstruction
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
@@ -30,6 +40,7 @@ import org.robolectric.android.util.concurrent.PausedExecutorService
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowLog
+import org.robolectric.shadows.ShadowAlertDialog
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -73,6 +84,130 @@ class CarPlayHostDisplaySizeTest {
         assertEquals(0, getField("restartGeneration"))
         assertFalse(getField("handshakeResetInProgress") as Boolean)
         assertEquals(2, keepLogs())
+    }
+
+    @Test fun disabledWifiDirectOffersSettingsAndDoesNotScheduleAutomaticReconnect() {
+        val button = Button(activity)
+        val stage = TextView(activity)
+        setField("wifiRecoveryButton", button)
+        setField("stageStatusView", stage)
+        @Suppress("UNCHECKED_CAST")
+        val report = activity.javaClass.getDeclaredMethod("createStatusReporter", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as (CarPlayStatus) -> Unit
+        report(CarPlayStatus.Failed("P2P disabled", wifiSettingsRequired = true))
+        assertFalse(getField("reconnectScheduled") as Boolean)
+        assertEquals(0, getField("reconnectAttempts"))
+        assertEquals(View.VISIBLE, button.visibility)
+        assertEquals(activity.getString(R.string.wifi_direct_unavailable), stage.text.toString())
+        button.performClick()
+        assertEquals(android.provider.Settings.ACTION_WIRELESS_SETTINGS,
+            shadowOf(activity).nextStartedActivity.action)
+        // Transient failures retain automatic recovery.
+        report(CarPlayStatus.Failed("transport interrupted"))
+        assertTrue(getField("reconnectScheduled") as Boolean)
+        assertEquals(View.GONE, button.visibility)
+    }
+
+    @Test @Config(sdk = [30], qualifiers = "zh-rCN-w800dp-h393dp-land")
+    fun pendingP2pOffersCurrentCredentialsWithoutLoggingOrRestarting() {
+        val controller = mock(CarPlayController::class.java)
+        val details = WirelessJoinDetails("DIRECT-test-network", "test-only-password",
+            "http://192.168.49.1:7001/diplay/network-check")
+        `when`(controller.wirelessJoinDetails()).thenReturn(details)
+        setField("controller", controller)
+        setField("wirelessEnabled", true)
+        val root = activity.javaClass.getDeclaredMethod("buildContentView")
+            .apply { isAccessible = true }.invoke(activity) as View
+        @Suppress("UNCHECKED_CAST")
+        val report = activity.javaClass.getDeclaredMethod("createStatusReporter", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as (CarPlayStatus) -> Unit
+        val button = getField("wifiJoinButton") as Button
+        assertEquals(View.GONE, button.visibility)
+        report(CarPlayStatus.RunningWireless)
+        assertEquals(View.VISIBLE, button.visibility)
+        val density = activity.resources.displayMetrics.density
+        val width = (800 * density).toInt()
+        val height = (393 * density).toInt()
+        root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, width, height)
+        val scroll = getField("connectionPanel") as ScrollView
+        val bounds = Rect()
+        button.getDrawingRect(bounds)
+        scroll.offsetDescendantRectToMyCoords(button, bounds)
+        scroll.scrollTo(0, (bounds.bottom - scroll.height).coerceAtLeast(0))
+        bounds.offset(0, -scroll.scrollY)
+        assertTrue(bounds.top >= 0 && bounds.bottom <= scroll.height)
+        button.performClick()
+        val dialog = ShadowAlertDialog.getLatestAlertDialog()
+        assertTrue(dialog.isShowing)
+        val content = dialog.findViewById<View>(android.R.id.custom) as android.widget.FrameLayout
+        val text = allTexts(content).joinToString("\n")
+        assertTrue(text.contains(details.ssid))
+        assertTrue(text.contains(details.passphrase))
+        assertTrue(text.contains(details.checkUrl!!))
+        assertFalse(getField("reconnectScheduled") as Boolean)
+        assertFalse(ShadowLog.getLogs().any { it.msg.contains(details.passphrase) || it.msg.contains(details.ssid) })
+        report(CarPlayStatus.WirelessActive)
+        assertEquals(View.GONE, button.visibility)
+        assertFalse(dialog.isShowing)
+        setField("wirelessHotspotMode", WirelessHotspotMode.MANUAL)
+        report(CarPlayStatus.RunningWireless)
+        assertEquals(View.GONE, button.visibility)
+    }
+
+    @Test fun inactiveSocketCloseKeepsPendingOrActiveCarPlayButRealSessionEndReconnects() {
+        val active = mock(AirPlaySession::class.java)
+        val probe = mock(AirPlaySession::class.java)
+        val listener = activity.javaClass.getDeclaredMethod("createSessionListener", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as AirPlaySessionListener
+        listener.onSessionEnded(probe)
+        assertFalse(getField("reconnectScheduled") as Boolean)
+        setField("activeAirPlaySession", active)
+        CarPlayBackgroundSession.active = true
+        listener.onSessionEnded(probe)
+        assertSame(active, getField("activeAirPlaySession"))
+        assertTrue(CarPlayBackgroundSession.active)
+        assertFalse(getField("reconnectScheduled") as Boolean)
+        listener.onSessionEnded(active)
+        assertNull(getField("activeAirPlaySession"))
+        assertFalse(CarPlayBackgroundSession.active)
+        assertTrue(getField("reconnectScheduled") as Boolean)
+    }
+
+    private fun allTexts(view: View): List<String> = when (view) {
+        is TextView -> listOf(view.text.toString())
+        is android.view.ViewGroup -> (0 until view.childCount).flatMap { allTexts(view.getChildAt(it)) }
+        else -> emptyList()
+    }
+
+    @Test @Config(sdk = [30], qualifiers = "zh-rCN-w800dp-h393dp-land")
+    fun wirelessRecoveryActionIsReachableInShortChineseLandscapeWindow() {
+        val root = activity.javaClass.getDeclaredMethod("buildContentView")
+            .apply { isAccessible = true }.invoke(activity) as View
+        @Suppress("UNCHECKED_CAST")
+        val report = activity.javaClass.getDeclaredMethod("createStatusReporter", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as (CarPlayStatus) -> Unit
+        report(CarPlayStatus.Failed("P2P disabled", wifiSettingsRequired = true))
+        val density = activity.resources.displayMetrics.density
+        val width = (800 * density).toInt()
+        val height = (393 * density).toInt()
+        root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, width, height)
+        val scroll = getField("connectionPanel") as ScrollView
+        assertTrue("Long recovery content must scroll instead of being clipped",
+            scroll.getChildAt(0).height > scroll.height)
+        scroll.scrollTo(0, scroll.getChildAt(0).height - scroll.height)
+        val button = getField("wifiRecoveryButton") as Button
+        val bounds = Rect()
+        button.getDrawingRect(bounds)
+        scroll.offsetDescendantRectToMyCoords(button, bounds)
+        bounds.offset(0, -scroll.scrollY)
+        assertTrue(bounds.top >= 0 && bounds.bottom <= scroll.height)
+        button.performClick()
+        assertEquals(android.provider.Settings.ACTION_WIRELESS_SETTINGS,
+            shadowOf(activity).nextStartedActivity.action)
     }
 
     @Test fun aNarrowWindowIsNotTreatedAsScreenRotation() {

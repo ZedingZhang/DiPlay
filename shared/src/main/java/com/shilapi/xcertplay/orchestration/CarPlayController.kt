@@ -118,8 +118,31 @@ sealed class CarPlayStatus {
     data object AttachingNetwork : CarPlayStatus()
     data object RunningControl : CarPlayStatus()
     data object ControlEnded : CarPlayStatus()
-    data class Failed(val message: String, val wifiResetRequired: Boolean = false) : CarPlayStatus()
+    data class Failed(val message: String, val wifiResetRequired: Boolean = false,
+        val wifiSettingsRequired: Boolean = false) : CarPlayStatus()
 }
+
+internal fun wirelessCarPlayEndpoint(
+    hotspot: com.shilapi.xcertplay.network.WirelessHotspotInfo,
+    hostAddress: String,
+    port: Int,
+    deviceIdentifier: String,
+    publicKey: String,
+    sourceVersion: String,
+) = Iap2WirelessCarPlayEndpoint(
+    ssid = hotspot.ssid, passphrase = hotspot.passphrase, channel = hotspot.channel,
+    security = hotspot.security, ipAddresses = listOf(hostAddress), airPlayPort = port,
+    deviceIdentifier = deviceIdentifier, publicKey = publicKey, sourceVersion = sourceVersion,
+    // Manual hotspot already works with SSID-only configuration. Limit the change to P2P.
+    bssid = if (hotspot.backend == com.shilapi.xcertplay.network.WirelessHotspotBackend.WIFI_P2P)
+        com.shilapi.xcertplay.network.hotspotBssidBytes(hotspot.bssid) else null,
+)
+
+internal fun carPlayFailureStatus(error: Throwable) = CarPlayStatus.Failed(
+    error.message ?: error.javaClass.simpleName,
+    generateSequence(error) { it.cause }.any { it is com.shilapi.xcertplay.network.P2pResetRequiredException },
+    generateSequence(error) { it.cause }.any { it is com.shilapi.xcertplay.network.P2pUnavailableException },
+)
 
 internal fun isWirelessHandoffInProgress(
     handoffRequested: Boolean,
@@ -226,6 +249,18 @@ class CarPlayController(
     @Volatile private var wirelessTunnelChannel: Iap2Session? = null
     @Volatile private var wirelessIdentification: Iap2IdentificationConfig? = null
     @Volatile private var wirelessAirPlayEndpoint: Iap2WirelessCarPlayEndpoint? = null
+
+    /** Snapshot the exact credentials sent over iAP2, only while our P2P connection is pending. */
+    fun wirelessJoinDetails(): WirelessJoinDetails? {
+        if (closed || config.transport != CarPlayTransport.WIRELESS ||
+            config.wirelessHotspotMode != WirelessHotspotMode.WIFI_P2P ||
+            wirelessActiveReported.get()) return null
+        val endpoint = wirelessAirPlayEndpoint ?: return null
+        // An Android link-local IPv6 scope names the Android interface, not the iPhone's.
+        val ipv4 = endpoint.ipAddresses.firstOrNull { ':' !in it }
+        return WirelessJoinDetails(endpoint.ssid, endpoint.passphrase,
+            ipv4?.let { "http://$it:${endpoint.airPlayPort}/diplay/network-check" })
+    }
     @Volatile private var wirelessLocationRequest = Iap2LocationRequest()
     @Volatile private var vpnService: CarPlayVpnService? = null
     @Volatile private var vpnBound = false
@@ -917,6 +952,7 @@ class CarPlayController(
             val mfi = mfiSession?.client
                 ?: throw IOException("MFi coprocessor client is unavailable")
             val hotspotInfo = startWirelessHotspot(generation)
+            debugLog(com.shilapi.xcertplay.network.LocalNetworkEnvironment.diagnosticSummary(appContext))
             if (isStaleWirelessRun(generation)) {
                 closeWirelessStack()
                 return
@@ -1003,6 +1039,8 @@ class CarPlayController(
                     "port=$listenerPort" +
                     (if (listenerPort != airPlayConfig.port) " (preferred ${airPlayConfig.port} in use)" else ""),
             )
+            debugLog(com.shilapi.xcertplay.network.WirelessListenerProbe.check(hostAddress, listenerPort)
+                .diagnosticSummary())
             if (isStaleWirelessRun(generation)) {
                 closeWirelessStack()
                 return
@@ -1068,17 +1106,11 @@ class CarPlayController(
             val identification = config.identification.copy(
                 wireless = Iap2WirelessIdentification(hostBluetoothMac, hotspotInfo.ssid),
             )
-            val endpoint = Iap2WirelessCarPlayEndpoint(
-                ssid = hotspotInfo.ssid,
-                passphrase = hotspotInfo.passphrase,
-                channel = hotspotInfo.channel,
-                security = hotspotInfo.security,
-                ipAddresses = listOf(hostAddressText),
-                airPlayPort = listenerPort,
-                deviceIdentifier = deviceIdentifier,
-                publicKey = identity.publicKeyHex,
-                sourceVersion = airPlayConfig.sourceVersion,
-            )
+            val endpoint = wirelessCarPlayEndpoint(hotspotInfo, hostAddressText, listenerPort,
+                deviceIdentifier, identity.publicKeyHex, airPlayConfig.sourceVersion)
+            debugLog("wireless iAP2 Wi-Fi configuration backend=${hotspotInfo.backend} " +
+                "apMacIncluded=${endpoint.bssid != null} channel=${endpoint.channel} " +
+                "security=${endpoint.security}")
             wirelessIdentification = identification
             wirelessAirPlayEndpoint = endpoint
             wirelessLocationRequest = Iap2LocationRequest()
@@ -2130,8 +2162,7 @@ class CarPlayController(
 
     private fun fail(error: Throwable) {
         if (closed) return
-        onStatus(CarPlayStatus.Failed(error.message ?: error.javaClass.simpleName,
-            generateSequence(error) { it.cause }.any { it is com.shilapi.xcertplay.network.P2pResetRequiredException }))
+        onStatus(carPlayFailureStatus(error))
     }
 
     private fun debugLog(message: String) {

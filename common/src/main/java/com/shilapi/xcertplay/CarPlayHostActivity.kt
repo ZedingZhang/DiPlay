@@ -110,6 +110,8 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private var connectionPanel: View? = null
     private var wifiRecoveryButton: View? = null
+    private var wifiJoinButton: View? = null
+    private var wifiJoinDialog: android.app.AlertDialog? = null
     private var reconnectAttempts = 0
     private lateinit var airPlayIdentity: AirPlayIdentity
     private var languagePreferenceAtCreate = AppLocale.SYSTEM
@@ -851,6 +853,8 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        wifiJoinDialog?.dismiss()
+        wifiJoinDialog = null
         clusterMonitor?.stop()
         mainHandler.removeCallbacks(hideIdleCenterMap)
         homeMonitor?.stop()
@@ -923,6 +927,12 @@ class CarPlayHostActivity : ComponentActivity() {
             wifiRecoveryButton = this
         }, LinearLayout.LayoutParams(dp(300), dp(64)).apply { bottomMargin = dp(12) })
         panel.addView(Button(this).apply {
+            text = getString(R.string.wifi_direct_join_help); isAllCaps = false; textSize = 18f
+            visibility = View.GONE
+            setOnClickListener { showWirelessJoinHelp() }
+            wifiJoinButton = this
+        }, LinearLayout.LayoutParams(dp(300), dp(64)).apply { bottomMargin = dp(12) })
+        panel.addView(Button(this).apply {
             text = getString(R.string.back_to_diplay); isAllCaps = false; textSize = 18f
             setTextColor(Color.rgb(12, 17, 27))
             background = GradientDrawable().apply { setColor(Color.rgb(166, 200, 255)); cornerRadius = dp(20).toFloat() }
@@ -932,11 +942,16 @@ class CarPlayHostActivity : ComponentActivity() {
             text = getString(R.string.in_carplay_swipe_down_with_three_fingers_to_open_diplay_se)
             textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.rgb(168, 182, 202)); setPadding(0, dp(20), 0, 0)
         })
-        root.addView(panel, FrameLayout.LayoutParams(-1, -1))
+        // Recovery messages can exceed a phone's short landscape window.
+        val panelScroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(panel, ViewGroup.LayoutParams(-1, -2))
+        }
+        root.addView(panelScroll, FrameLayout.LayoutParams(-1, -1))
         videoView = video
         gestureOverlay = gestureLayer
         stageStatusView = stage
-        connectionPanel = panel
+        connectionPanel = panelScroll
         updateDebugOverlays()
         return root
     }
@@ -2665,6 +2680,30 @@ class CarPlayHostActivity : ComponentActivity() {
         }
     }
 
+    private fun showWirelessJoinHelp() {
+        val details = controller?.wirelessJoinDetails() ?: return
+        appendLog("Wi-Fi Direct manual join help opened")
+        val text = buildString {
+            append(getString(R.string.wifi_direct_join_instructions))
+            append("\n\n").append(getString(R.string.wifi_direct_join_network, details.ssid))
+            append("\n").append(getString(R.string.wifi_direct_join_password, details.passphrase))
+            details.checkUrl?.let {
+                append("\n\n").append(getString(R.string.wifi_direct_join_check, it))
+            }
+        }
+        val content = TextView(this).apply {
+            this.text = text
+            textSize = 17f
+            setPadding(dp(24), dp(12), dp(24), dp(12))
+        }
+        wifiJoinDialog?.dismiss()
+        wifiJoinDialog = android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.wifi_direct_join_help)
+            .setView(ScrollView(this).apply { addView(content) })
+            .setPositiveButton(android.R.string.ok, null)
+            .create().also { it.show() }
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun <T> settingsChoiceRow(
         label: String,
@@ -3115,11 +3154,17 @@ class CarPlayHostActivity : ComponentActivity() {
 
             override fun onSessionEnded(session: AirPlaySession) {
                 runOnUiThread {
-                    if (activeAirPlaySession === session) activeAirPlaySession = null
-                    CarPlayBackgroundSession.active = false
-                    if (menuOpen || controllerGeneration != restartGeneration) {
+                    if (controllerGeneration != restartGeneration) {
                         return@runOnUiThread
                     }
+                    // A browser check or an abandoned discovery socket is not the live session.
+                    if (activeAirPlaySession !== session) {
+                        appendLog("AirPlay inactive connection closed; keeping current connection")
+                        return@runOnUiThread
+                    }
+                    activeAirPlaySession = null
+                    CarPlayBackgroundSession.active = false
+                    if (menuOpen) return@runOnUiThread
                     activeScreenStreamTypes.clear()
                     setConnectionStage(getString(R.string.carplay_session_ended_reconnecting))
                     appendLog("AirPlay session ended; reconnecting from scratch")
@@ -3165,11 +3210,31 @@ class CarPlayHostActivity : ComponentActivity() {
         controllerGeneration: Int,
     ): (CarPlayStatus) -> Unit = { status ->
         if (!menuOpen && controllerGeneration == restartGeneration) {
+            wifiJoinButton?.visibility = if (status == CarPlayStatus.RunningWireless &&
+                wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P) View.VISIBLE else View.GONE
+            if (status is CarPlayStatus.Failed || status == CarPlayStatus.StartingHotspot ||
+                status == CarPlayStatus.WirelessActive) {
+                wifiJoinDialog?.dismiss()
+                wifiJoinDialog = null
+            }
             updateHotspotStatus(status)
             val description = status.describe()
             setConnectionStage(description)
             when (status) {
-                is CarPlayStatus.Failed -> if (status.wifiResetRequired) {
+                is CarPlayStatus.Failed -> if (status.wifiSettingsRequired) {
+                    (wifiRecoveryButton as? Button)?.apply {
+                        text = getString(R.string.open_wireless_settings)
+                        visibility = View.VISIBLE
+                        setOnClickListener {
+                            runCatching { startActivity(Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)) }
+                                .onFailure { showDiPlayHome("wireless-recovery") }
+                        }
+                    }
+                } else if (status.wifiResetRequired) {
+                    (wifiRecoveryButton as? Button)?.apply {
+                        text = getString(R.string.reset_carplay_wi_fi)
+                        setOnClickListener { showDiPlayHome("wireless-recovery") }
+                    }
                     wifiRecoveryButton?.visibility = View.VISIBLE
                 } else {
                     wifiRecoveryButton?.visibility = View.GONE
@@ -3759,6 +3824,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun friendlyStage(message: String): String = when {
+        message == getString(R.string.wifi_direct_unavailable) -> message
         message.contains("Turn on Wi-Fi", true) -> getString(R.string.turn_on_wi_fi_in_the_head_unit_s_settings_to_connect)
         message.contains("Allow precise Location", true) -> getString(R.string.allow_precise_location_for_diplay_in_the_head_unit_s_app_p)
         message.contains("Allow Nearby devices", true) -> getString(R.string.allow_nearby_devices_for_diplay_in_the_head_unit_s_app_per)
@@ -3868,7 +3934,8 @@ class CarPlayHostActivity : ComponentActivity() {
             if (wirelessEnabled) getString(R.string.starting_airplay_service) else getString(R.string.status_attaching_ncm)
         CarPlayStatus.RunningControl -> getString(R.string.carplay_control_running)
         CarPlayStatus.ControlEnded -> getString(R.string.carplay_control_window_ended)
-        is CarPlayStatus.Failed -> getString(R.string.status_failed, message)
+        is CarPlayStatus.Failed -> if (wifiSettingsRequired) getString(R.string.wifi_direct_unavailable)
+            else getString(R.string.status_failed, message)
     }
 
     private companion object {

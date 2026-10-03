@@ -5,6 +5,17 @@ import org.junit.Test
 import java.nio.file.Files
 
 class DiagnosticRedactorTest {
+    @Test fun listenerAndNetworkPolicyDiagnosticsRemainAvailableWithoutIdentity() {
+        for (line in listOf(
+            "Wireless local network activeVpn=false visibleVpn=false proxyConfigured=false",
+            "Wireless listener self-check outcome=OK stage=RESPONSE status=200 error=none elapsedMs=15",
+            "Wireless listener self-check outcome=IO_FAILURE stage=READ status=none error=SocketTimeoutException elapsedMs=2000",
+            "AirPlay listener starting family=IPv4 port=7000",
+            "AirPlay listener accepted family=IPv4 localPeer=false localMatchesEndpoint=true port=7000",
+            "AirPlay listener failed stage=SESSION error=IllegalStateException",
+            "AirPlay control failed stage=INITIALIZE error=SocketException",
+        )) assertEquals(line, DiagnosticRedactor.redact(line))
+    }
     @Test fun boundedMicrophoneStartFailureAndCaptureCountersSurviveRedaction() {
         val lines = listOf(
             "Microphone: start type=telephony source=VOICE_COMMUNICATION codec=OPUS rate=48000 channels=1 frameMs=20 routedDeviceType=15",
@@ -92,6 +103,9 @@ class DiagnosticRedactorTest {
             "Wi-Fi P2P create rejected code=0 reason=generic error",
             "Wi-Fi P2P ready mode=FIXED_2_GHZ band=2.4 GHz channel=6 frequencyMHz=2437",
             "Wi-Fi P2P channel requestedMHz=2437 actualMHz=2412 matched=false",
+            "wireless iAP2 Wi-Fi configuration backend=WIFI_P2P apMacIncluded=true channel=6 security=WPA_WPA2",
+            "Wi-Fi P2P credentials source=framework matchesRequested=true",
+            "Wi-Fi P2P peers ownedGroup=true clientsReported=1 elapsedMs=10000",
             "wireless hotspot backend=Wi-Fi P2P iface=p2p0 host=192.168.49.1 band=5 GHz channel=36 frequency=5180MHz",
         )
         for (line in lines) assertNotNull(line, DiagnosticRedactor.redact(line))

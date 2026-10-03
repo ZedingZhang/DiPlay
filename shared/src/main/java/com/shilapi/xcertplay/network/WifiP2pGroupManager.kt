@@ -12,21 +12,18 @@ import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
+import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.shilapi.xcertplay.transport.Iap2WirelessSecurity
 import java.io.IOException
-import java.net.Inet4Address
-import java.net.Inet6Address
-import java.net.InetAddress
 import java.net.NetworkInterface
 import java.net.SocketException
-import java.net.UnknownHostException
 import java.security.SecureRandom
-import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -63,6 +60,7 @@ class WifiP2pGroupManager(
 
     private var channel: WifiP2pManager.Channel? = null
     private var callbackThread: HandlerThread? = null
+    private var peerMonitor: Handler? = null
     private var created = false
     private var closed = false
     private var startAttempt: StartAttempt? = null
@@ -115,7 +113,7 @@ class WifiP2pGroupManager(
                 callbackThread = thread
             }
 
-            logP2pState(attempt, p2pChannel)
+            checkP2pState(attempt, p2pChannel)
             // Preferences disappear on reinstall, but the scoped namespace survives.
             val existing = requestGroupInfo(attempt, p2pChannel, REQUEST_POLL_NANOS, requireResponse = true)
             diagnostic("Wi-Fi P2P existingGroup=${existing != null}")
@@ -143,6 +141,7 @@ class WifiP2pGroupManager(
                     synchronized(stateLock) { waitNanos(TimeUnit.MILLISECONDS.toNanos(500)) }
                     ensureStartActive(attempt)
                     checkPrerequisites(readStation())
+                    checkP2pState(attempt, p2pChannel)
                     if (requestGroupInfo(attempt, p2pChannel, REQUEST_POLL_NANOS, requireResponse = true) != null) {
                         throw P2pResetRequiredException()
                     }
@@ -206,6 +205,7 @@ class WifiP2pGroupManager(
                     configurationMemory.remember(creation, requireNotNull(group.frequencyMHz), stationFrequency)
                 }
             }
+            startPeerObservation(p2pChannel, thread.looper, group.ssid)
             return group
         } catch (failure: Exception) {
             diagnostic("Wi-Fi P2P startup stopped type=${failure.javaClass.simpleName}")
@@ -231,6 +231,8 @@ class WifiP2pGroupManager(
         synchronized(stateLock) {
             if (closed) return
             closed = true
+            peerMonitor?.removeCallbacksAndMessages(null)
+            peerMonitor = null
             if (!carPlayConfirmed) rememberedAttempt?.let {
                 if (configurationMemory.forget(it)) diagnostic("Wi-Fi P2P remembered cleared=session_unconfirmed")
             }
@@ -259,6 +261,45 @@ class WifiP2pGroupManager(
         override fun onChannelDisconnected() {
             failAttempt(attempt, IOException("Wi-Fi P2P channel disconnected"))
         }
+    }
+
+    private fun startPeerObservation(activeChannel: WifiP2pManager.Channel, looper: Looper, ssid: String) {
+        val handler = synchronized(stateLock) {
+            if (closed || !created || channel !== activeChannel) return
+            Handler(looper).also { peerMonitor = it }
+        }
+        val startedAt = SystemClock.elapsedRealtime()
+        var lastCount: Int? = null
+        var lastReportAt = 0L
+        fun active() = synchronized(stateLock) {
+            !closed && created && channel === activeChannel && peerMonitor === handler
+        }
+        val poll = object : Runnable {
+            override fun run() {
+                if (!active() || SystemClock.elapsedRealtime() - startedAt >= 120_000) return
+                try {
+                    p2pManager.requestGroupInfo(activeChannel) { group ->
+                        if (!active()) return@requestGroupInfo
+                        if (group?.isGroupOwner != true || group.networkName != ssid) {
+                            diagnostic("Wi-Fi P2P peers ownedGroup=false observation=stopped")
+                            return@requestGroupInfo
+                        }
+                        val elapsed = SystemClock.elapsedRealtime() - startedAt
+                        val count = group.clientList.size
+                        // Vendor firmware may omit legacy stations; zero is not proof of no join.
+                        if (lastCount != count || elapsed - lastReportAt >= 30_000) {
+                            diagnostic("Wi-Fi P2P peers ownedGroup=true clientsReported=$count elapsedMs=$elapsed")
+                            lastCount = count
+                            lastReportAt = elapsed
+                        }
+                        if (active() && elapsed < 120_000) handler.postDelayed(this, 5_000)
+                    }
+                } catch (error: RuntimeException) {
+                    if (active()) diagnostic("Wi-Fi P2P peers observation=stopped type=${error.javaClass.simpleName}")
+                }
+            }
+        }
+        handler.postDelayed(poll, 5_000)
     }
 
     private fun createActionListener(
@@ -336,6 +377,7 @@ class WifiP2pGroupManager(
         timeoutMillis: Long,
     ): WirelessHotspotInfo {
         var lastReason = "group information was not available"
+        var identityDeadline: Long? = null
         while (true) {
             ensureStartActive(attempt)
             val remainingNanos = remainingNanos(deadlineNanos)
@@ -360,7 +402,8 @@ class WifiP2pGroupManager(
             if (credentials != null && networkName != null && networkName != credentials.ssid) {
                 throw IOException("Wi-Fi Direct returned an unexpected group")
             }
-            val passphrase = group.passphrase?.takeIf { it.isNotBlank() }
+            val frameworkPassphrase = group.passphrase?.takeIf { it.isNotBlank() }
+            val passphrase = frameworkPassphrase
                 ?: credentials?.passphrase
             val interfaceName = group.getInterface()?.takeIf { it.isNotBlank() }
             val frequencyMHz = group.frequency
@@ -380,16 +423,34 @@ class WifiP2pGroupManager(
                 else -> throw IOException("Wi-Fi P2P returned an unsupported band at ${frequencyMHz}MHz")
             }
 
-            val hostAddress = awaitInterfaceAddress(attempt, interfaceName, deadlineNanos)
-                ?: requestConnectionAddress(
-                    attempt = attempt,
-                    channel = channel,
-                    timeoutNanos = minOf(remainingNanos(deadlineNanos), REQUEST_POLL_NANOS),
-                )
+            val connection = requestConnectionInfo(attempt, channel,
+                minOf(remainingNanos(deadlineNanos), REQUEST_POLL_NANOS))
+            val network = networkInterface(interfaceName)
+            val addresses = network?.inetAddresses?.toList().orEmpty()
+            val hostAddress = p2pGroupHostAddress(
+                connection?.groupFormed == true, connection?.isGroupOwner == true,
+                connection?.groupOwnerAddress, addresses, network?.index ?: 0)
             if (hostAddress == null) {
-                lastReason = "interface $interfaceName has no usable IPv6 or IPv4 address"
+                lastReason = "group owner not ready or interface $interfaceName has no usable address"
+                Thread.sleep(100)
                 continue
             }
+            val bssid = p2pGroupBssid(interfaceHardwareAddress(interfaceName), addresses)
+            // IPv4 can be ready before the MAC-derived IPv6 identity on Android 11.
+            // Give that identity a bounded chance to settle, but allow opaque/hidden MACs.
+            if (bssid == null && network != null) {
+                val waitUntil = identityDeadline ?: minOf(deadlineNanos, deadlineAfter(2_000)).also {
+                    identityDeadline = it
+                    diagnostic("Wi-Fi P2P identity wait started iface=$interfaceName")
+                }
+                if (remainingNanos(waitUntil) > 0) {
+                    lastReason = "group interface identity is still configuring"
+                    Thread.sleep(100)
+                    continue
+                }
+            }
+            diagnostic("Wi-Fi P2P endpoint source=${if (hostAddress == connection?.groupOwnerAddress) "framework_owner" else "group_interface"} family=${if (hostAddress is java.net.Inet4Address) "IPv4" else "IPv6"} identityAvailable=${bssid != null}")
+            diagnostic("Wi-Fi P2P credentials source=${if (frameworkPassphrase != null) "framework" else "requested"} matchesRequested=${credentials?.let { passphrase == it.passphrase } ?: "system_selected"}")
 
             return WirelessHotspotInfo(
                 ssid = networkName,
@@ -397,8 +458,7 @@ class WifiP2pGroupManager(
                 security = groupSecurity(group),
                 channel = channelNumber,
                 frequencyMHz = frequencyMHz,
-                bssid = interfaceHardwareAddress(interfaceName)
-                    ?: group.owner?.deviceAddress?.takeIf { it.isNotBlank() },
+                bssid = bssid,
                 interfaceName = interfaceName,
                 hostAddress = hostAddress,
                 bandLabel = band,
@@ -433,11 +493,11 @@ class WifiP2pGroupManager(
         return result.get()
     }
 
-    private fun requestConnectionAddress(
+    private fun requestConnectionInfo(
         attempt: StartAttempt,
         channel: WifiP2pManager.Channel,
         timeoutNanos: Long,
-    ): InetAddress? {
+    ): WifiP2pInfo? {
         val result = AtomicReference<WifiP2pInfo?>()
         val latch = CountDownLatch(1)
         p2pManager.requestConnectionInfo(channel) {
@@ -446,9 +506,7 @@ class WifiP2pGroupManager(
         }
         if (!await(latch, timeoutNanos)) return null
         ensureStartActive(attempt)
-        val info = result.get() ?: return null
-        if (!info.groupFormed) return null
-        return info.groupOwnerAddress?.takeUnless(InetAddress::isAnyLocalAddress)
+        return result.get()
     }
 
     private fun await(latch: CountDownLatch, timeoutNanos: Long): Boolean = try {
@@ -457,41 +515,6 @@ class WifiP2pGroupManager(
     } catch (interrupted: InterruptedException) {
         Thread.currentThread().interrupt()
         throw IOException("Interrupted while waiting for Wi-Fi P2P", interrupted)
-    }
-
-    private fun interfaceAddress(interfaceName: String): InetAddress? {
-        val networkInterface = networkInterface(interfaceName) ?: return null
-        var ipv4: InetAddress? = null
-        for (address in Collections.list(networkInterface.inetAddresses)) {
-            if (address is Inet6Address && address.isLinkLocalAddress) {
-                if (address.scopeId == networkInterface.index) return address
-                try {
-                    return Inet6Address.getByAddress(null, address.address, networkInterface)
-                } catch (_: UnknownHostException) {
-                    continue
-                }
-            }
-            if (address is Inet4Address && !address.isLoopbackAddress && ipv4 == null) {
-                ipv4 = address
-            }
-        }
-        return ipv4
-    }
-
-    private fun awaitInterfaceAddress(
-        attempt: StartAttempt,
-        interfaceName: String,
-        startupDeadlineNanos: Long,
-    ): InetAddress? {
-        // Group creation precedes IPv6 link-local configuration on some head units.
-        // Give IPv6 a bounded chance to appear before falling back to IPv4.
-        val addressDeadline = minOf(startupDeadlineNanos, deadlineAfter(2_000))
-        while (true) {
-            ensureStartActive(attempt)
-            val address = interfaceAddress(interfaceName)
-            if (address is Inet6Address || remainingNanos(addressDeadline) <= 0) return address
-            Thread.sleep(100)
-        }
     }
 
     private data class Station(val state: SupplicantState?, val reportedFrequency: Int?) {
@@ -531,13 +554,14 @@ class WifiP2pGroupManager(
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun logP2pState(attempt: StartAttempt, channel: WifiP2pManager.Channel) {
+    private fun checkP2pState(attempt: StartAttempt, channel: WifiP2pManager.Channel) {
         val result = AtomicReference<Int?>()
         val latch = CountDownLatch(1)
         p2pManager.requestP2pState(channel) { state -> result.set(state); latch.countDown() }
         await(latch, REQUEST_POLL_NANOS)
         ensureStartActive(attempt)
         diagnostic("Wi-Fi P2P frameworkState=${result.get() ?: "unknown"}")
+        if (result.get() == WifiP2pManager.WIFI_P2P_STATE_DISABLED) throw P2pUnavailableException()
     }
 
     private fun interfaceHardwareAddress(interfaceName: String): String? =

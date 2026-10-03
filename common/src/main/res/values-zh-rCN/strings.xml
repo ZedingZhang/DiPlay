@@ -1,6 +1,8 @@
 <resources>
     <string name="built_in_car_hotspot">车载热点</string>
     <string name="wifi_direct">Wi-Fi Direct</string>
+    <string name="wifi_direct_unavailable">系统已禁用 Wi-Fi Direct。请关闭本机个人热点，保持 Wi-Fi 开启，再返回 DiPlay 重新连接。必要时在系统设置中关闭再打开 Wi-Fi。</string>
+    <string name="open_wireless_settings">打开无线网络设置</string>
     <string name="hotspot_hint_manual">车载热点 · 保持车载热点、蓝牙和 iPhone 的 Wi-Fi 开启。</string>
     <string name="hotspot_hint_local">打开“连接设置”以保存车载热点信息。</string>
     <string name="hotspot_hint_p2p">Wi-Fi Direct · 保持车机 Wi-Fi 开关、蓝牙和 iPhone 的 Wi-Fi 开启。</string>
@@ -478,4 +480,9 @@
     <string name="center_map_no_permission_screen">此车机没有该权限的设置界面，请通过 ADB 允许。</string>
     <string name="launcher_map_sharing">与其他启动器共享实时地图</string>
     <string name="launcher_map_sharing_description">支持 DiPlay 的启动器可以在自己的主屏幕中显示实时仪表盘地图。默认关闭，因为开启后车机上的任何应用都可以请求该地图。详见 docs/LAUNCHER_INTEGRATION.md。</string>
+    <string name="wifi_direct_join_help">iPhone Wi-Fi 连接帮助</string>
+    <string name="wifi_direct_join_instructions">保持小米上的 DiPlay 停留在本次连接。在 iPhone 的“设置 → Wi-Fi”中，选择下方网络并输入本次密码。如果提示没有互联网，请保持连接。DiPlay 重新连接后这些凭据会变化。凭据只在此处显示，不会写入导出日志。</string>
+    <string name="wifi_direct_join_network">网络名：%1$s</string>
+    <string name="wifi_direct_join_password">密码：%1$s</string>
+    <string name="wifi_direct_join_check">加入后，在 iPhone 的 Safari 中打开以下地址。若显示“DiPlay network check OK”，说明 Wi-Fi 能够连接到 DiPlay。无论是否出现 CarPlay 画面，都请回到 DiPlay 导出日志。\n%1$s</string>
 </resources>

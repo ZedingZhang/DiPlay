@@ -10,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Assert.fail
 
 class Iap2WirelessControlClientTest {
     @Test
@@ -105,7 +106,24 @@ class Iap2WirelessControlClientTest {
         assertTrue(0x4300 in u16Values(parameters.single { it.id == 7 }.payload))
     }
 
-    private fun endpoint(): Iap2WirelessCarPlayEndpoint = Iap2WirelessCarPlayEndpoint(
+    @Test fun bssidSnapshotIsStableAcrossInputMutationAndRepeatedWifiReplies() {
+        val mac = byteArrayOf(0x12, 0x22, 0x33, 0x44, 0x55, 0x66)
+        val endpoint = endpoint(mac)
+        val original = Iap2WirelessControlClient.accessoryWiFiConfiguration(endpoint).encodedFrame()
+        mac[0] = 0
+        endpoint.bssid!![0] = 0
+        assertArrayEquals(original, Iap2WirelessControlClient.accessoryWiFiConfiguration(endpoint).encodedFrame())
+    }
+
+    @Test fun malformedOrPlaceholderBssidCannotBeAdvertised() {
+        for (invalid in listOf(byteArrayOf(1), byteArrayOf(2, 0, 0, 0, 0, 0),
+            ByteArray(6), ByteArray(6) { 0xff.toByte() })) {
+            try { endpoint(invalid); fail("Invalid BSSID accepted") }
+            catch (_: IllegalArgumentException) { }
+        }
+    }
+
+    private fun endpoint(bssid: ByteArray? = null): Iap2WirelessCarPlayEndpoint = Iap2WirelessCarPlayEndpoint(
         ssid = "LIVI",
         passphrase = "secret123",
         channel = 36,
@@ -115,6 +133,7 @@ class Iap2WirelessControlClientTest {
         deviceIdentifier = "dev-1",
         publicKey = "aabbcc",
         sourceVersion = "1.0",
+        bssid = bssid,
     )
 
     private fun u16Values(bytes: ByteArray): List<Int> =
