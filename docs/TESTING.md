@@ -6,6 +6,14 @@ For channel memory, connect until authenticated CarPlay renders, disconnect and 
 
 Include head-unit model, DiLink/Android, iPhone/iOS, wired/wireless, app version and exact steps. Do not post credentials or unreviewed personal information. See [compatibility](COMPATIBILITY.md) for remaining limitations.
 
+## Upstream v0.2.10 integration
+
+The integration uses the final upstream tag `v0.2.10` at `3e43e25c55921bdf5149f5f92851acf202ed353a`, including the release corrections for USBMUX, artwork queue bounds, video source validation and port/socket ownership. The four phone fixes below must pass together with the upstream regressions before publishing the fork update.
+
+On Xiaomi Mi 10 / Android 11, reconnect wirelessly, check picture/touch/music, make a call and verify microphone behavior and music playback after the call ends. Try Wi-Fi Direct if used; a BUSY channel should receive bounded retries/fallback, not an indefinite wait. If using USB, also try starting it before filling the Manual wireless hotspot fields. Confirm the saved report contains connection stages, startup settings and microphone diagnostics after exercising those paths. Optional vehicle-only controls should remain hidden on this phone. Repeat all four regression sections below, including rotation while reconnecting and changing the CarPlay size preset.
+
+The manual standalone APK workflow verifies the published v0.2.10 APK digest before extracting its two runtime identity assets, and then checks the rebuilt package/version, APK signature, asset bytes and ARM64 libraries. Source-only CI retains its normal asset-free builds.
+
 ## Phone landscape UI
 
 On Xiaomi Mi 10 / Android 11, open the Chinese home screen in landscape with the default font size, both disconnected and with CarPlay connected. Wireless connect/open CarPlay, choose iPhone, disconnect, USB, connection setup and settings should fit above the fold in a short window at least 600dp wide. On shorter landscape windows below 600dp wide, cards stack and remain scrollable. Larger fonts may require scrolling, but button labels should wrap and touch targets remain at least 48dp high.
