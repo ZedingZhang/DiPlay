@@ -25,18 +25,10 @@ internal fun p2pGroupHostAddress(
 internal fun p2pGroupBssid(
     hardwareAddress: String?,
     interfaceAddresses: List<InetAddress>,
-    ownerDeviceAddress: String?,
 ): String? {
-    fun usableMac(value: String?): Boolean {
-        val bytes = value?.split(":")?.takeIf { it.size == 6 }
-            ?.map { it.takeIf { part -> part.length == 2 }?.toIntOrNull(16) ?: return false }
-            ?: return false
-        return bytes.all { it in 0..255 } && (bytes[0] and 1) == 0 &&
-            bytes.any { it != 0 } && bytes != listOf(2, 0, 0, 0, 0, 0)
-    }
-    return hardwareAddress?.takeIf(::usableMac)
+    // WifiP2pGroup.owner.deviceAddress identifies the P2P device, not necessarily its GO AP.
+    return hardwareAddress?.takeIf { hotspotBssidBytes(it) != null }
         ?: HotspotInterfaceBssid.fromAddresses(interfaceAddresses.map { it.address })
-        ?: ownerDeviceAddress?.takeIf(::usableMac)
 }
 
 /** Disabled P2P cannot be repaired by channel retries or by removing another app's group. */

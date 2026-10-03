@@ -122,6 +122,22 @@ sealed class CarPlayStatus {
         val wifiSettingsRequired: Boolean = false) : CarPlayStatus()
 }
 
+internal fun wirelessCarPlayEndpoint(
+    hotspot: com.shilapi.xcertplay.network.WirelessHotspotInfo,
+    hostAddress: String,
+    port: Int,
+    deviceIdentifier: String,
+    publicKey: String,
+    sourceVersion: String,
+) = Iap2WirelessCarPlayEndpoint(
+    ssid = hotspot.ssid, passphrase = hotspot.passphrase, channel = hotspot.channel,
+    security = hotspot.security, ipAddresses = listOf(hostAddress), airPlayPort = port,
+    deviceIdentifier = deviceIdentifier, publicKey = publicKey, sourceVersion = sourceVersion,
+    // Manual hotspot already works with SSID-only configuration. Limit the change to P2P.
+    bssid = if (hotspot.backend == com.shilapi.xcertplay.network.WirelessHotspotBackend.WIFI_P2P)
+        com.shilapi.xcertplay.network.hotspotBssidBytes(hotspot.bssid) else null,
+)
+
 internal fun carPlayFailureStatus(error: Throwable) = CarPlayStatus.Failed(
     error.message ?: error.javaClass.simpleName,
     generateSequence(error) { it.cause }.any { it is com.shilapi.xcertplay.network.P2pResetRequiredException },
@@ -1075,17 +1091,11 @@ class CarPlayController(
             val identification = config.identification.copy(
                 wireless = Iap2WirelessIdentification(hostBluetoothMac, hotspotInfo.ssid),
             )
-            val endpoint = Iap2WirelessCarPlayEndpoint(
-                ssid = hotspotInfo.ssid,
-                passphrase = hotspotInfo.passphrase,
-                channel = hotspotInfo.channel,
-                security = hotspotInfo.security,
-                ipAddresses = listOf(hostAddressText),
-                airPlayPort = listenerPort,
-                deviceIdentifier = deviceIdentifier,
-                publicKey = identity.publicKeyHex,
-                sourceVersion = airPlayConfig.sourceVersion,
-            )
+            val endpoint = wirelessCarPlayEndpoint(hotspotInfo, hostAddressText, listenerPort,
+                deviceIdentifier, identity.publicKeyHex, airPlayConfig.sourceVersion)
+            debugLog("wireless iAP2 Wi-Fi configuration backend=${hotspotInfo.backend} " +
+                "bssidIncluded=${endpoint.bssid != null} channel=${endpoint.channel} " +
+                "security=${endpoint.security}")
             wirelessIdentification = identification
             wirelessAirPlayEndpoint = endpoint
             wirelessLocationRequest = Iap2LocationRequest()

@@ -33,13 +33,12 @@ class P2pGroupEndpointTest {
 
     @Test fun hiddenAndroid11MacUsesOnlyUnambiguousEui64OfTheGroupInterface() {
         val addresses = listOf(ip("fe80::1022:33ff:fe44:5566"))
-        assertEquals("12:22:33:44:55:66", p2pGroupBssid("02:00:00:00:00:00", addresses,
-            "02:00:00:00:00:00"))
-        assertEquals("24:22:33:44:55:66", p2pGroupBssid("24:22:33:44:55:66", addresses, null))
-        assertNull(p2pGroupBssid(null, listOf(ip("fe80::1234")), "02:00:00:00:00:00"))
-        assertNull(p2pGroupBssid(null, addresses + ip("fe80::2222:33ff:fe44:5566"), null))
+        assertEquals("12:22:33:44:55:66", p2pGroupBssid("02:00:00:00:00:00", addresses))
+        assertEquals("24:22:33:44:55:66", p2pGroupBssid("24:22:33:44:55:66", addresses))
+        assertNull(p2pGroupBssid(null, listOf(ip("fe80::1234"))))
+        assertNull(p2pGroupBssid(null, addresses + ip("fe80::2222:33ff:fe44:5566")))
         for (invalid in listOf("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff", "01:22:33:44:55:66", "invalid")) {
-            assertNull(p2pGroupBssid(invalid, emptyList(), invalid))
+            assertNull(p2pGroupBssid(invalid, emptyList()))
         }
     }
 

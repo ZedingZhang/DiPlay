@@ -22,6 +22,10 @@ Switch to Manual hotspot, connect, then switch back to Wi-Fi Direct while the pe
 
 In a short phone landscape window, the connection/recovery screen must scroll so the complete error and wireless settings action remain reachable.
 
+For the Wi-Fi Direct BSSID follow-up, verify `wireless iAP2 Wi-Fi configuration backend=WIFI_P2P bssidIncluded=true` when the active GO interface has a real MAC. Android 11 may hide hardwareAddress; allow a bounded wait for its MAC-derived link-local identity. Placeholder/saved AirPlay/P2P device identifiers must never become the Wi-Fi BSSID. Unknown or opaque interface MACs should remain omitted. Manual and LocalOnlyHotspot retain their previous SSID-only messages. Repeat the iPhone connection test on both frequency bands where supported.
+
+The first two minutes after group startup also report `Wi-Fi P2P peers` snapshots with ownership and a client count. Snapshots must stop after close, when another group replaces ours, or after the observation window. They must not contain SSIDs, passphrases or client MACs. Some vendors omit legacy AP stations from this API, so a zero count alone is not proof that the iPhone failed to associate. Save a fresh report even if CarPlay still fails; the known BSSID must reach the 0x5703 payload, not just the AirPlay device ID.
+
 The earlier report proves successful group creation/Bluetooth authentication followed by no AirPlay session, and later a disabled P2P radio with repeated BUSY failures. The address/identity changes are a compatibility fix to test on hardware; they are not proof that the iPhone joined the earlier group.
 
 ## Phone landscape UI
