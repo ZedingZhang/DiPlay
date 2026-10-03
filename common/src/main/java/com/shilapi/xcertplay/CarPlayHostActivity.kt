@@ -110,6 +110,8 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private var connectionPanel: View? = null
     private var wifiRecoveryButton: View? = null
+    private var wifiJoinButton: View? = null
+    private var wifiJoinDialog: android.app.AlertDialog? = null
     private var reconnectAttempts = 0
     private lateinit var airPlayIdentity: AirPlayIdentity
     private var languagePreferenceAtCreate = AppLocale.SYSTEM
@@ -851,6 +853,8 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        wifiJoinDialog?.dismiss()
+        wifiJoinDialog = null
         clusterMonitor?.stop()
         mainHandler.removeCallbacks(hideIdleCenterMap)
         homeMonitor?.stop()
@@ -921,6 +925,12 @@ class CarPlayHostActivity : ComponentActivity() {
             visibility = View.GONE
             setOnClickListener { showDiPlayHome("wireless-recovery") }
             wifiRecoveryButton = this
+        }, LinearLayout.LayoutParams(dp(300), dp(64)).apply { bottomMargin = dp(12) })
+        panel.addView(Button(this).apply {
+            text = getString(R.string.wifi_direct_join_help); isAllCaps = false; textSize = 18f
+            visibility = View.GONE
+            setOnClickListener { showWirelessJoinHelp() }
+            wifiJoinButton = this
         }, LinearLayout.LayoutParams(dp(300), dp(64)).apply { bottomMargin = dp(12) })
         panel.addView(Button(this).apply {
             text = getString(R.string.back_to_diplay); isAllCaps = false; textSize = 18f
@@ -2670,6 +2680,30 @@ class CarPlayHostActivity : ComponentActivity() {
         }
     }
 
+    private fun showWirelessJoinHelp() {
+        val details = controller?.wirelessJoinDetails() ?: return
+        appendLog("Wi-Fi Direct manual join help opened")
+        val text = buildString {
+            append(getString(R.string.wifi_direct_join_instructions))
+            append("\n\n").append(getString(R.string.wifi_direct_join_network, details.ssid))
+            append("\n").append(getString(R.string.wifi_direct_join_password, details.passphrase))
+            details.checkUrl?.let {
+                append("\n\n").append(getString(R.string.wifi_direct_join_check, it))
+            }
+        }
+        val content = TextView(this).apply {
+            this.text = text
+            textSize = 17f
+            setPadding(dp(24), dp(12), dp(24), dp(12))
+        }
+        wifiJoinDialog?.dismiss()
+        wifiJoinDialog = android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.wifi_direct_join_help)
+            .setView(ScrollView(this).apply { addView(content) })
+            .setPositiveButton(android.R.string.ok, null)
+            .create().also { it.show() }
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun <T> settingsChoiceRow(
         label: String,
@@ -3120,11 +3154,17 @@ class CarPlayHostActivity : ComponentActivity() {
 
             override fun onSessionEnded(session: AirPlaySession) {
                 runOnUiThread {
-                    if (activeAirPlaySession === session) activeAirPlaySession = null
-                    CarPlayBackgroundSession.active = false
-                    if (menuOpen || controllerGeneration != restartGeneration) {
+                    if (controllerGeneration != restartGeneration) {
                         return@runOnUiThread
                     }
+                    // A browser check or an abandoned discovery socket is not the live session.
+                    if (activeAirPlaySession !== session) {
+                        appendLog("AirPlay inactive connection closed; keeping current connection")
+                        return@runOnUiThread
+                    }
+                    activeAirPlaySession = null
+                    CarPlayBackgroundSession.active = false
+                    if (menuOpen) return@runOnUiThread
                     activeScreenStreamTypes.clear()
                     setConnectionStage(getString(R.string.carplay_session_ended_reconnecting))
                     appendLog("AirPlay session ended; reconnecting from scratch")
@@ -3170,6 +3210,13 @@ class CarPlayHostActivity : ComponentActivity() {
         controllerGeneration: Int,
     ): (CarPlayStatus) -> Unit = { status ->
         if (!menuOpen && controllerGeneration == restartGeneration) {
+            wifiJoinButton?.visibility = if (status == CarPlayStatus.RunningWireless &&
+                wirelessHotspotMode == WirelessHotspotMode.WIFI_P2P) View.VISIBLE else View.GONE
+            if (status is CarPlayStatus.Failed || status == CarPlayStatus.StartingHotspot ||
+                status == CarPlayStatus.WirelessActive) {
+                wifiJoinDialog?.dismiss()
+                wifiJoinDialog = null
+            }
             updateHotspotStatus(status)
             val description = status.describe()
             setConnectionStage(description)

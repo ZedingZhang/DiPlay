@@ -249,6 +249,18 @@ class CarPlayController(
     @Volatile private var wirelessTunnelChannel: Iap2Session? = null
     @Volatile private var wirelessIdentification: Iap2IdentificationConfig? = null
     @Volatile private var wirelessAirPlayEndpoint: Iap2WirelessCarPlayEndpoint? = null
+
+    /** Snapshot the exact credentials sent over iAP2, only while our P2P connection is pending. */
+    fun wirelessJoinDetails(): WirelessJoinDetails? {
+        if (closed || config.transport != CarPlayTransport.WIRELESS ||
+            config.wirelessHotspotMode != WirelessHotspotMode.WIFI_P2P ||
+            wirelessActiveReported.get()) return null
+        val endpoint = wirelessAirPlayEndpoint ?: return null
+        // An Android link-local IPv6 scope names the Android interface, not the iPhone's.
+        val ipv4 = endpoint.ipAddresses.firstOrNull { ':' !in it }
+        return WirelessJoinDetails(endpoint.ssid, endpoint.passphrase,
+            ipv4?.let { "http://$it:${endpoint.airPlayPort}/diplay/network-check" })
+    }
     @Volatile private var wirelessLocationRequest = Iap2LocationRequest()
     @Volatile private var vpnService: CarPlayVpnService? = null
     @Volatile private var vpnBound = false

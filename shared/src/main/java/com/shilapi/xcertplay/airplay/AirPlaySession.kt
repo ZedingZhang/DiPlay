@@ -80,6 +80,8 @@ class AirPlaySession(
 
     private val closed = AtomicBoolean(false)
     private val notified = AtomicBoolean(false)
+    private var handledRequests = 0
+    private var networkCheckOnly = false
     private var eventServer: ServerSocket? = null
     private var eventSocket: Socket? = null
     private var eventCipher: ControlCipher? = null
@@ -124,7 +126,8 @@ class AirPlaySession(
         if (!closed.compareAndSet(false, true)) return
         safeClose(socket)
         try {
-            media.onSessionClosed(this)
+            // A one-request browser probe has created no media state to tear down.
+            if (!networkCheckOnly) media.onSessionClosed(this)
         } catch (error: Exception) {
             Log.w(TAG, "airplay media stream teardown failed", error)
         }
@@ -355,6 +358,11 @@ class AirPlaySession(
                     val wire = RtspMessage.buildResponse(request, response)
                     trace("airplay control tx wireHex=${wire.toHex()}")
                     output.write(cipher?.encrypt(wire) ?: wire)
+                    if (response.headers["Connection"] == "close") {
+                        output.flush()
+                        closeReason = "network check completed"
+                        return
+                    }
                     if (cipher == null && pairVerify.controlKeys != null) {
                         val keys = pairVerify.controlKeys!!
                         cipher = ControlCipher(keys.readKey, keys.writeKey)
@@ -374,6 +382,9 @@ class AirPlaySession(
     }
 
     private fun handle(request: RtspMessage.Request): RtspMessage.Response {
+        if (handledRequests++ == 0) {
+            networkCheckOnly = request.method == "GET" && request.path.lowercase() == "/diplay/network-check"
+        }
         when (request.method) {
             "SETUP" -> return handleSetup(request)
             "RECORD" -> {
@@ -385,6 +396,16 @@ class AirPlaySession(
 
         val path = request.path.lowercase()
         return when {
+            request.method == "GET" && path == "/diplay/network-check" -> {
+                // Proves reachability of this same AirPlay socket, without activating CarPlay.
+                debugLog("DiPlay network check reached")
+                RtspMessage.Response(
+                    headers = mapOf("Content-Type" to "text/plain; charset=utf-8",
+                        "Cache-Control" to "no-store", "Connection" to "close"),
+                    body = "DiPlay network check OK\nWi-Fi can reach DiPlay. Return to DiPlay and export the connection log.\n"
+                        .toByteArray(Charsets.UTF_8),
+                )
+            }
             path.endsWith("/pair-setup") -> RtspMessage.Response(
                 headers = mapOf("Content-Type" to PAIRING_CONTENT_TYPE),
                 body = pairSetup.handle(request.body),
