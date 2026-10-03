@@ -297,13 +297,15 @@ class AirPlaySession(
         )
 
     private fun runControl() {
-        com.shilapi.xcertplay.network.TcpLiveness.configure(socket) { debugLog(it) }
-        val input = BufferedInputStream(socket.getInputStream())
-        val output = BufferedOutputStream(socket.getOutputStream())
-        var accumulated = ByteArray(0)
-        val buffer = ByteArray(READ_CHUNK_BYTES)
         var closeReason = "session closed"
+        var stage = "INITIALIZE"
         try {
+            com.shilapi.xcertplay.network.TcpLiveness.configure(socket) { debugLog(it) }
+            val input = BufferedInputStream(socket.getInputStream())
+            val output = BufferedOutputStream(socket.getOutputStream())
+            var accumulated = ByteArray(0)
+            val buffer = ByteArray(READ_CHUNK_BYTES)
+            stage = "READ_PROCESS"
             while (!closed.get()) {
                 val count = input.read(buffer)
                 if (count < 0) {
@@ -359,6 +361,9 @@ class AirPlaySession(
                     trace("airplay control tx wireHex=${wire.toHex()}")
                     output.write(cipher?.encrypt(wire) ?: wire)
                     if (response.headers["Connection"] == "close") {
+                        // The service normally requests an immediate reset on close. HTTP
+                        // browser checks need a graceful FIN so their response is not discarded.
+                        socket.setSoLinger(false, 0)
                         output.flush()
                         closeReason = "network check completed"
                         return
@@ -374,7 +379,10 @@ class AirPlaySession(
             }
         } catch (error: Exception) {
             closeReason = "control I/O failed: ${error.message ?: error.javaClass.simpleName}"
-            if (!closed.get()) Log.e(TAG, "airplay $closeReason", error)
+            if (!closed.get()) {
+                debugLog("AirPlay control failed stage=$stage error=${error.javaClass.simpleName}")
+                Log.e(TAG, "airplay $closeReason", error)
+            }
         } finally {
             debugLog("airplay control closing reason=$closeReason activeStreams=$activeStreams")
             close()

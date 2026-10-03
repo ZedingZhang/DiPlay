@@ -952,6 +952,7 @@ class CarPlayController(
             val mfi = mfiSession?.client
                 ?: throw IOException("MFi coprocessor client is unavailable")
             val hotspotInfo = startWirelessHotspot(generation)
+            debugLog(com.shilapi.xcertplay.network.LocalNetworkEnvironment.diagnosticSummary(appContext))
             if (isStaleWirelessRun(generation)) {
                 closeWirelessStack()
                 return
@@ -1038,6 +1039,8 @@ class CarPlayController(
                     "port=$listenerPort" +
                     (if (listenerPort != airPlayConfig.port) " (preferred ${airPlayConfig.port} in use)" else ""),
             )
+            debugLog(com.shilapi.xcertplay.network.WirelessListenerProbe.check(hostAddress, listenerPort)
+                .diagnosticSummary())
             if (isStaleWirelessRun(generation)) {
                 closeWirelessStack()
                 return

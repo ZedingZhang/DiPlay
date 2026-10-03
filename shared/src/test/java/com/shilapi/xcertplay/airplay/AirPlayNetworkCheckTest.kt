@@ -16,6 +16,26 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30])
 class AirPlayNetworkCheckTest {
+    @Test fun failedSocketInitializationIsReportedAndSessionIsClosed() {
+        val ended = CountDownLatch(1)
+        val diagnostics = CopyOnWriteArrayList<String>()
+        val socket = Socket().apply { close() }
+        val session = AirPlaySession(socket,
+            AirPlayConfig(deviceName = "test", deviceId = "02:00:00:00:00:02",
+                btMac = "02:00:00:00:00:01", sourceVersion = "1",
+                main = AirPlayDisplayConfig(widthPixels = 800, heightPixels = 480)),
+            AirPlayIdentity.generate(), PairingStore(), null,
+            object : AirPlaySessionListener {
+                override fun onDebugLog(message: String) { diagnostics += message }
+                override fun onSessionEnded(session: AirPlaySession) { ended.countDown() }
+            }, object : AirPlayMediaHandler {})
+        try {
+            session.start()
+            assertTrue(ended.await(3, TimeUnit.SECONDS))
+            assertTrue(diagnostics.contains("AirPlay control failed stage=INITIALIZE error=SocketException"))
+        } finally { session.close() }
+    }
+
     @Test fun safariCheckUsesAirPlaySocketAndDoesNotActivateCarPlay() {
         val activated = AtomicInteger()
         val mediaClosed = AtomicInteger()

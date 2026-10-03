@@ -171,7 +171,7 @@ class CarPlayVpnService : VpnService() {
         attachment = replacement.copy(config = replacement.config.copy(port = server.localPort))
         serverSocket = server
         Thread(
-            { acceptLoop(generation, server) },
+            { acceptLoop(generation, server, replacement.listener) },
             "airplay-accept",
         ).apply {
             isDaemon = true
@@ -182,16 +182,25 @@ class CarPlayVpnService : VpnService() {
     private fun acceptLoop(
         generation: Int,
         server: ServerSocket,
+        listener: AirPlaySessionListener,
     ) {
+        reportDiagnostic(listener,
+            "AirPlay listener starting family=${if (server.inetAddress is Inet6Address) "IPv6" else "IPv4"} port=${server.localPort}")
+        var pendingSocket: Socket? = null
+        var stage = "ACCEPT"
         try {
             while (active.get()) {
+                stage = "ACCEPT"
                 val socket: Socket = server.accept()
+                pendingSocket = socket
+                stage = "CONFIGURE"
                 Log.i(TAG, "airplay connection accepted from ${socket.remoteSocketAddress}")
                 socket.tcpNoDelay = true
                 socket.keepAlive = true
                 socket.setSoLinger(true, 0)
+                stage = "SESSION"
                 val session = synchronized(this) {
-                    if (!active.get()) {
+                    if (!active.get() || generation != attachGeneration) {
                         socket.close()
                         return
                     }
@@ -200,6 +209,10 @@ class CarPlayVpnService : VpnService() {
                         socket.close()
                         return
                     }
+                    reportDiagnostic(current.listener,
+                        "AirPlay listener accepted family=${if (socket.inetAddress is Inet6Address) "IPv6" else "IPv4"} " +
+                            "localPeer=${socket.inetAddress == current.address} localMatchesEndpoint=${socket.localAddress == current.address} " +
+                            "port=${socket.localPort}")
                     AirPlaySession(
                         socket = socket,
                         config = current.config,
@@ -227,13 +240,25 @@ class CarPlayVpnService : VpnService() {
                         media = current.media,
                     ).also(::addSession)
                 }
+                pendingSocket = null
+                stage = "START_SESSION"
                 session.start()
             }
-        } catch (error: IOException) {
-            if (active.get()) {
-                attachment?.listener?.let { onTransportError(generation, it, error) }
+        } catch (error: Exception) {
+            runCatching { pendingSocket?.close() }
+            val current = synchronized(this) {
+                attachment?.takeIf { active.get() && generation == attachGeneration }
+            }
+            current?.listener?.let {
+                reportDiagnostic(it, "AirPlay listener failed stage=$stage error=${error.javaClass.simpleName}")
+                onTransportError(generation, it, error)
             }
         }
+    }
+
+    private fun reportDiagnostic(listener: AirPlaySessionListener, message: String) {
+        try { listener.onDebugLog(message) }
+        catch (failure: Exception) { Log.w(TAG, "AirPlay listener diagnostic unavailable", failure) }
     }
 
     private fun addSession(session: AirPlaySession) {

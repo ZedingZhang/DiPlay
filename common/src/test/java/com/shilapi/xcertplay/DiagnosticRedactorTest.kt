@@ -5,6 +5,17 @@ import org.junit.Test
 import java.nio.file.Files
 
 class DiagnosticRedactorTest {
+    @Test fun listenerAndNetworkPolicyDiagnosticsRemainAvailableWithoutIdentity() {
+        for (line in listOf(
+            "Wireless local network activeVpn=false visibleVpn=false proxyConfigured=false",
+            "Wireless listener self-check outcome=OK stage=RESPONSE status=200 error=none elapsedMs=15",
+            "Wireless listener self-check outcome=IO_FAILURE stage=READ status=none error=SocketTimeoutException elapsedMs=2000",
+            "AirPlay listener starting family=IPv4 port=7000",
+            "AirPlay listener accepted family=IPv4 localPeer=false localMatchesEndpoint=true port=7000",
+            "AirPlay listener failed stage=SESSION error=IllegalStateException",
+            "AirPlay control failed stage=INITIALIZE error=SocketException",
+        )) assertEquals(line, DiagnosticRedactor.redact(line))
+    }
     @Test fun boundedMicrophoneStartFailureAndCaptureCountersSurviveRedaction() {
         val lines = listOf(
             "Microphone: start type=telephony source=VOICE_COMMUNICATION codec=OPUS rate=48000 channels=1 frameMs=20 routedDeviceType=15",
