@@ -20,6 +20,8 @@ On Xiaomi Mi 10 / Android 11, turn off the phone's personal hotspot and keep Wi-
 
 Switch to Manual hotspot, connect, then switch back to Wi-Fi Direct while the personal hotspot is still enabled. If Android reports P2P disabled, the app should stop channel retries and show a localized message and wireless settings button. Turn off the personal hotspot, leave Wi-Fi on, return and reconnect. If the vendor still reports P2P disabled, turn Wi-Fi off and on in system settings and retry. The app must not toggle the radio or delete another app's group automatically. Verify that an enabled P2P radio still receives bounded BUSY channel fallback, and Manual hotspot remains usable.
 
+In a short phone landscape window, the connection/recovery screen must scroll so the complete error and wireless settings action remain reachable.
+
 The earlier report proves successful group creation/Bluetooth authentication followed by no AirPlay session, and later a disabled P2P radio with repeated BUSY failures. The address/identity changes are a compatibility fix to test on hardware; they are not proof that the iPhone joined the earlier group.
 
 ## Phone landscape UI

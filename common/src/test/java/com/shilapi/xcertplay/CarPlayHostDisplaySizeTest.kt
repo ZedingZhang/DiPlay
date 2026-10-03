@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import android.graphics.Matrix
+import android.graphics.Rect
 import android.os.Looper
 import android.view.MotionEvent
 import android.view.Surface
@@ -8,6 +9,7 @@ import android.view.TextureView
 import android.view.View
 import android.widget.Button
 import android.widget.TextView
+import android.widget.ScrollView
 import com.shilapi.xcertplay.airplay.*
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.media.AndroidMediaSink
@@ -99,6 +101,35 @@ class CarPlayHostDisplaySizeTest {
         report(CarPlayStatus.Failed("transport interrupted"))
         assertTrue(getField("reconnectScheduled") as Boolean)
         assertEquals(View.GONE, button.visibility)
+    }
+
+    @Test @Config(sdk = [30], qualifiers = "zh-rCN-w800dp-h393dp-land")
+    fun wirelessRecoveryActionIsReachableInShortChineseLandscapeWindow() {
+        val root = activity.javaClass.getDeclaredMethod("buildContentView")
+            .apply { isAccessible = true }.invoke(activity) as View
+        @Suppress("UNCHECKED_CAST")
+        val report = activity.javaClass.getDeclaredMethod("createStatusReporter", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as (CarPlayStatus) -> Unit
+        report(CarPlayStatus.Failed("P2P disabled", wifiSettingsRequired = true))
+        val density = activity.resources.displayMetrics.density
+        val width = (800 * density).toInt()
+        val height = (393 * density).toInt()
+        root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, width, height)
+        val scroll = getField("connectionPanel") as ScrollView
+        assertTrue("Long recovery content must scroll instead of being clipped",
+            scroll.getChildAt(0).height > scroll.height)
+        scroll.scrollTo(0, scroll.getChildAt(0).height - scroll.height)
+        val button = getField("wifiRecoveryButton") as Button
+        val bounds = Rect()
+        button.getDrawingRect(bounds)
+        scroll.offsetDescendantRectToMyCoords(button, bounds)
+        bounds.offset(0, -scroll.scrollY)
+        assertTrue(bounds.top >= 0 && bounds.bottom <= scroll.height)
+        button.performClick()
+        assertEquals(android.provider.Settings.ACTION_WIRELESS_SETTINGS,
+            shadowOf(activity).nextStartedActivity.action)
     }
 
     @Test fun aNarrowWindowIsNotTreatedAsScreenRotation() {

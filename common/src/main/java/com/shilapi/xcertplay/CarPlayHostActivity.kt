@@ -932,11 +932,16 @@ class CarPlayHostActivity : ComponentActivity() {
             text = getString(R.string.in_carplay_swipe_down_with_three_fingers_to_open_diplay_se)
             textSize = 13f; gravity = Gravity.CENTER; setTextColor(Color.rgb(168, 182, 202)); setPadding(0, dp(20), 0, 0)
         })
-        root.addView(panel, FrameLayout.LayoutParams(-1, -1))
+        // Recovery messages can exceed a phone's short landscape window.
+        val panelScroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(panel, ViewGroup.LayoutParams(-1, -2))
+        }
+        root.addView(panelScroll, FrameLayout.LayoutParams(-1, -1))
         videoView = video
         gestureOverlay = gestureLayer
         stageStatusView = stage
-        connectionPanel = panel
+        connectionPanel = panelScroll
         updateDebugOverlays()
         return root
     }
