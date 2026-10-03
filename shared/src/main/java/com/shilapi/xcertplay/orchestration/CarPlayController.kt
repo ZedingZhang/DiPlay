@@ -1094,7 +1094,7 @@ class CarPlayController(
             val endpoint = wirelessCarPlayEndpoint(hotspotInfo, hostAddressText, listenerPort,
                 deviceIdentifier, identity.publicKeyHex, airPlayConfig.sourceVersion)
             debugLog("wireless iAP2 Wi-Fi configuration backend=${hotspotInfo.backend} " +
-                "bssidIncluded=${endpoint.bssid != null} channel=${endpoint.channel} " +
+                "apMacIncluded=${endpoint.bssid != null} channel=${endpoint.channel} " +
                 "security=${endpoint.security}")
             wirelessIdentification = identification
             wirelessAirPlayEndpoint = endpoint

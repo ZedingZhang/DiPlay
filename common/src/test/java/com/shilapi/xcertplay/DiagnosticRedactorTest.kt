@@ -92,6 +92,9 @@ class DiagnosticRedactorTest {
             "Wi-Fi P2P create rejected code=0 reason=generic error",
             "Wi-Fi P2P ready mode=FIXED_2_GHZ band=2.4 GHz channel=6 frequencyMHz=2437",
             "Wi-Fi P2P channel requestedMHz=2437 actualMHz=2412 matched=false",
+            "wireless iAP2 Wi-Fi configuration backend=WIFI_P2P apMacIncluded=true channel=6 security=WPA_WPA2",
+            "Wi-Fi P2P credentials source=framework matchesRequested=true",
+            "Wi-Fi P2P peers ownedGroup=true clientsReported=1 elapsedMs=10000",
             "wireless hotspot backend=Wi-Fi P2P iface=p2p0 host=192.168.49.1 band=5 GHz channel=36 frequency=5180MHz",
         )
         for (line in lines) assertNotNull(line, DiagnosticRedactor.redact(line))
