@@ -40,7 +40,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".hudtest"
-            versionNameSuffix = "-settings-rotation-hud-test"
+            versionNameSuffix = "-unified-settings-hud-test"
         }
         release {
             optimization {

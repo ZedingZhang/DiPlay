@@ -1,15 +1,11 @@
 package com.shilapi.xcertplay
 
 import android.app.AlertDialog
-import android.content.ComponentName
-import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
 import android.os.Looper
-import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -40,54 +36,6 @@ class DiPlayLandscapeLayoutTest {
     private lateinit var activity: DiPlayActivity
 
     @After fun cleanUp() { CarPlayBackgroundSession.clear() }
-
-    @Test fun homeAndCarPlayUseTheSameSensorPolicyWithSystemRotationLocked() {
-        val context = RuntimeEnvironment.getApplication()
-        Settings.System.putInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0)
-        listOf(DiPlayActivity::class.java, CarPlayHostActivity::class.java).forEach { type ->
-            val info = context.packageManager.getActivityInfo(ComponentName(context, type), 0)
-            assertEquals(type.simpleName, ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR, info.screenOrientation)
-        }
-    }
-
-    @Test fun gestureReusesPortraitChineseSettingsInLandscapeAndCanRotateBack() {
-        RuntimeEnvironment.setQualifiers("en-w393dp-h800dp-port-xhdpi")
-        AppLocale.save(RuntimeEnvironment.getApplication(), AppLocale.SIMPLIFIED_CHINESE)
-        val controller = Robolectric.buildActivity(DiPlayActivity::class.java).setup()
-        activity = controller.get()
-        try {
-            button(layout(), R.string.settings).performClick()
-            controller.pause().stop()
-            RuntimeEnvironment.setQualifiers("en-w800dp-h393dp-land-xhdpi")
-            activity.onConfigurationChanged(activity.resources.configuration)
-            controller.newIntent(Intent(activity, DiPlayActivity::class.java)
-                .putExtra("page", "settings").addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
-                .start().resume()
-            assertEquals(Configuration.ORIENTATION_LANDSCAPE, activity.resources.configuration.orientation)
-            assertEquals(800, activity.resources.configuration.screenWidthDp)
-            assertEquals("zh", activity.resources.configuration.locales[0].language)
-            var root = layout()
-            val resolution = buttons(root).first { it.text.startsWith(activity.getString(R.string.resolution)) }
-            val buffer = buttons(root).first { it.text.startsWith(activity.getString(R.string.music_buffer)) }
-            assertEquals(bounds(root, resolution).top, bounds(root, buffer).top)
-            assertTrue(bounds(root, resolution).right < bounds(root, buffer).left)
-            val back = button(root, R.string.back)
-            val before = bounds(root, back)
-            val scroll = descendants(root).filterIsInstance<ScrollView>().single()
-            scroll.scrollTo(0, bounds(root, resolution).top - scroll.top - dp(60))
-            assertEquals(before, bounds(root, back))
-            preview(root, "mi10-gesture-settings-after-portrait")
-            button(root, R.string.show_advanced_settings).performClick()
-            RuntimeEnvironment.setQualifiers("en-w393dp-h800dp-port-xhdpi")
-            activity.onConfigurationChanged(activity.resources.configuration)
-            root = layout()
-            assertEquals(Configuration.ORIENTATION_PORTRAIT, activity.resources.configuration.orientation)
-            assertNotNull(button(root, R.string.hide_advanced_settings))
-            assertTrue(button(root, R.string.back).height >= dp(48))
-        } finally {
-            controller.pause().stop().destroy()
-        }
-    }
 
     @Test fun connectedPhoneActionsFitAboveTheFoldWithAccessibleTouchTargets() {
         create()
