@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.app.LocaleManager
 import android.content.Context
+import android.content.res.Configuration
 import android.os.LocaleList
 import android.view.View
 import org.junit.Assert.*
@@ -58,5 +59,21 @@ class AppLocaleTest {
         assertEquals(original, context.resources.configuration.locales.toLanguageTags())
         AppLocale.save(context, AppLocale.SYSTEM)
         assertSame(context, AppLocale.wrap(context))
+    }
+
+    @Test @Config(sdk = [30], qualifiers = "w393dp-h800dp-port-xhdpi")
+    fun olderAndroidLanguageOverrideFollowsRotationWindowSizeAndFontScale() {
+        AppLocale.save(context, AppLocale.SIMPLIFIED_CHINESE)
+        val wrapped = AppLocale.wrap(context)
+        RuntimeEnvironment.setQualifiers("w800dp-h393dp-land-xhdpi")
+        assertEquals(Configuration.ORIENTATION_LANDSCAPE, wrapped.resources.configuration.orientation)
+        assertEquals(800, wrapped.resources.configuration.screenWidthDp)
+        assertEquals(393, wrapped.resources.configuration.screenHeightDp)
+        assertEquals(Locale.SIMPLIFIED_CHINESE, wrapped.resources.configuration.locales[0])
+        RuntimeEnvironment.setFontScale(1.3f)
+        assertEquals(1.3f, wrapped.resources.configuration.fontScale, .01f)
+        RuntimeEnvironment.setQualifiers("w393dp-h800dp-port-xhdpi")
+        assertEquals(Configuration.ORIENTATION_PORTRAIT, wrapped.resources.configuration.orientation)
+        assertEquals(393, wrapped.resources.configuration.screenWidthDp)
     }
 }

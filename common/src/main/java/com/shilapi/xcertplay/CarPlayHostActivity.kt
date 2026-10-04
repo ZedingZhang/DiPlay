@@ -311,6 +311,9 @@ class CarPlayHostActivity : ComponentActivity() {
     }
     private var activeDisplaySize: DisplaySize? = null
     private var pendingDisplaySize: DisplaySize? = null
+    private var lockedCarPlayOrientation: Int? = null
+    private var lockedCarPlayRotation: Int? = null
+    private var displayResizePaused = false
     private var sessionDisplay: CarPlaySessionDisplay? = null
     private var touchOutsideContent = false
     private var displayScalePercent = 100
@@ -464,6 +467,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        restoreCarPlayOrientation(savedInstanceState)
         NavigationWidgetUpdater.attach(applicationContext)
         CenterMapOverlay.requestShow = ::showCenterMap
         MapMirrors.sink = mirrorSink
@@ -688,6 +692,8 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        displayResizePaused = false
+        lockedCarPlayOrientation?.let { requestedOrientation = it }
         val savedNightMode = AirPlayPersistence.loadCarPlayNightMode(this)
         val savedThreshold = AirPlayPersistence.loadAmbientLightThreshold(this)
         val savedDelay = AirPlayPersistence.loadAmbientDelaySeconds(this)
@@ -957,10 +963,17 @@ class CarPlayHostActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("carplay_night_active", darkMode)
+        lockedCarPlayOrientation?.let { outState.putInt(STATE_CARPLAY_ORIENTATION, it) }
+        lockedCarPlayRotation?.let { outState.putInt(STATE_CARPLAY_ROTATION, it) }
         super.onSaveInstanceState(outState)
     }
 
     override fun onPause() {
+        // Settings can rotate the shared display while this host remains connected in the
+        // background. Those temporary bounds must not renegotiate the CarPlay canvas.
+        displayResizePaused = true
+        mainHandler.removeCallbacks(applyDisplaySize)
+        pendingDisplaySize = null
         nightModeController.pause()
         super.onPause()
     }
@@ -3251,6 +3264,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun currentActivitySize(): DisplaySize? {
+        if (!canApplyDisplaySize()) return activeDisplaySize
         val view = videoView
         if (view != null && view.width > 0 && view.height > 0) {
             return DisplaySize(view.width, view.height)
@@ -3635,7 +3649,8 @@ class CarPlayHostActivity : ComponentActivity() {
         if (airPlayConfig.videoInCar) CarPlayVideo.attach(this, next)
         val display = CarPlaySessionDisplay(
             airPlayConfig.main.widthPixels, airPlayConfig.main.heightPixels,
-            displayRotation(), hideTopBar, hideBottomBar, effectiveSize.width, effectiveSize.height,
+            lockedCarPlayRotation ?: displayRotation(), hideTopBar, hideBottomBar,
+            effectiveSize.width, effectiveSize.height, lockedCarPlayOrientation,
         )
         sessionDisplay = display
         videoView?.let { updateVideoLayout(it.width, it.height) }
@@ -3714,7 +3729,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     private fun scheduleDisplaySize(width: Int, height: Int) {
-        if (width <= 0 || height <= 0 || shuttingDown.get()) return
+        if (width <= 0 || height <= 0 || shuttingDown.get() || !canApplyDisplaySize()) return
         val size = DisplaySize(width, height)
         if (size == pendingDisplaySize) return
         mainHandler.removeCallbacks(applyDisplaySize)
@@ -3734,6 +3749,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
 
     private fun applyDisplaySize(size: DisplaySize) {
+        if (!canApplyDisplaySize()) return
         val display = sessionDisplay
         val layoutChanged = displayLayoutChanged(size)
         if (shuttingDown.get()) return
@@ -3778,6 +3794,20 @@ class CarPlayHostActivity : ComponentActivity() {
 
     @Suppress("DEPRECATION")
     private fun displayRotation(): Int = videoView?.display?.rotation ?: windowManager.defaultDisplay.rotation
+
+    private fun canApplyDisplaySize(): Boolean = !displayResizePaused &&
+        (lockedCarPlayRotation == null || lockedCarPlayRotation == displayRotation())
+
+    private fun restoreCarPlayOrientation(savedInstanceState: Bundle?) {
+        val retained = CarPlayBackgroundSession.snapshot()?.display
+        lockedCarPlayRotation = if (savedInstanceState?.containsKey(STATE_CARPLAY_ROTATION) == true) {
+            savedInstanceState.getInt(STATE_CARPLAY_ROTATION)
+        } else retained?.rotation ?: displayRotation()
+        lockedCarPlayOrientation = if (savedInstanceState?.containsKey(STATE_CARPLAY_ORIENTATION) == true) {
+            savedInstanceState.getInt(STATE_CARPLAY_ORIENTATION)
+        } else retained?.lockedOrientation ?: CarPlayOrientation.capture(this, lockedCarPlayRotation!!)
+        requestedOrientation = lockedCarPlayOrientation!!
+    }
 
     private fun displayLayoutChanged(newSize: DisplaySize? = activeDisplaySize): Boolean {
         val display = sessionDisplay ?: return false
@@ -4320,6 +4350,8 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "xcertplay-usb"
+        const val STATE_CARPLAY_ORIENTATION = "carplay_locked_orientation"
+        const val STATE_CARPLAY_ROTATION = "carplay_locked_rotation"
         const val SCREEN_TYPE_MAIN = 110
         const val SCREEN_TYPE_ALT = 111
         private const val CENTER_MAP_IDLE_MILLIS = 3_000L // a reconnect is quicker; a session end is not
@@ -4365,6 +4397,7 @@ internal data class CarPlaySessionDisplay(
     // Compare unscaled startup window dimensions, not the scaled video canvas.
     val windowWidth: Int,
     val windowHeight: Int,
+    val lockedOrientation: Int? = null,
 )
 
 /** Process-local hand-off for keeping the CarPlay session alive while no Activity is visible. */
