@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.app.LocaleManager
 import android.content.Context
+import android.content.res.Configuration
 import android.os.LocaleList
 import android.view.View
 import org.junit.Assert.*
@@ -58,5 +59,25 @@ class AppLocaleTest {
         assertEquals(original, context.resources.configuration.locales.toLanguageTags())
         AppLocale.save(context, AppLocale.SYSTEM)
         assertSame(context, AppLocale.wrap(context))
+    }
+
+    @Test @Config(sdk = [30], qualifiers = "en-w393dp-h800dp-port-xhdpi")
+    fun legacyLanguageContextTracksRotationAndNightModeWithoutLosingChinese() {
+        AppLocale.save(context, AppLocale.SIMPLIFIED_CHINESE)
+        val wrapped = AppLocale.wrap(context)
+        assertEquals(393, wrapped.resources.configuration.screenWidthDp)
+        RuntimeEnvironment.setQualifiers("en-w800dp-h393dp-land-night-xhdpi")
+        val landscape = wrapped.resources.configuration
+        assertEquals(Configuration.ORIENTATION_LANDSCAPE, landscape.orientation)
+        assertEquals(800, landscape.screenWidthDp)
+        assertEquals(393, landscape.screenHeightDp)
+        assertEquals(Configuration.UI_MODE_NIGHT_YES, landscape.uiMode and Configuration.UI_MODE_NIGHT_MASK)
+        assertEquals(Locale.SIMPLIFIED_CHINESE, landscape.locales[0])
+        RuntimeEnvironment.setQualifiers("en-w393dp-h800dp-port-notnight-xhdpi")
+        val portrait = wrapped.resources.configuration
+        assertEquals(Configuration.ORIENTATION_PORTRAIT, portrait.orientation)
+        assertEquals(393, portrait.screenWidthDp)
+        assertEquals(800, portrait.screenHeightDp)
+        assertEquals(Locale.SIMPLIFIED_CHINESE, portrait.locales[0])
     }
 }
