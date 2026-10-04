@@ -67,6 +67,7 @@ class DiPlayActivity : ComponentActivity() {
         it.screenHeightDp in 1 until 480 && it.screenWidthDp > it.screenHeightDp
     }
     private val compactColumns: Boolean get() = isCompactLayout && resources.configuration.screenWidthDp >= 600
+    private val compactSettings: Boolean get() = compactColumns && (page == "settings" || page == "connection")
     private val handler = Handler(Looper.getMainLooper())
     private var page = "home"
     private var pendingCarHotspotSetup = false
@@ -303,7 +304,9 @@ class DiPlayActivity : ComponentActivity() {
         val header = row().apply { gravity = Gravity.CENTER_VERTICAL }
         val headerActionWidth = (resources.configuration.screenWidthDp / 4).coerceIn(80, 112)
         header.addView(ImageView(this).apply { setImageResource(R.drawable.ic_carplay); contentDescription = getString(R.string.carplay) }, LinearLayout.LayoutParams(dp(if (compact) 28 else 36), dp(if (compact) 28 else 36)))
-        header.addView(label(getString(R.string.diplay), 26, TEXT, true).apply { setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, dp(if (compact) 48 else 56), 1f))
+        val headerTitle = if (compactSettings) "${getString(R.string.diplay)} · ${getString(if (page == "settings") R.string.settings else R.string.connection_setup)}"
+            else getString(R.string.diplay)
+        header.addView(label(headerTitle, 26, TEXT, true).apply { setPadding(dp(12), 0, 0, 0) }, LinearLayout.LayoutParams(0, dp(if (compact) 48 else 56), 1f))
         if (compact && page != "settings") {
             header.addView(button(getString(R.string.settings), false) { page = "settings"; render() },
                 LinearLayout.LayoutParams(dp(headerActionWidth), -2).apply { marginEnd = dp(8) })
@@ -480,8 +483,11 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     private fun settings(content: LinearLayout) {
-        content.addView(label(getString(R.string.your_drive_your_way), 34, TEXT, true))
-        content.addView(label(getString(R.string.apply_reconnects_carplay_for_size_resolution_music_buffer), 17, MUTED).apply { setPadding(0, dp(8), 0, dp(24)) })
+        if (compactSettings) content.tag = COMPACT_SECTIONS
+        else content.addView(label(getString(R.string.your_drive_your_way), 34, TEXT, true))
+        content.addView(label(getString(R.string.apply_reconnects_carplay_for_size_resolution_music_buffer), 17, MUTED).apply {
+            setPadding(0, dp(if (compactSettings) 0 else 8), 0, dp(if (compactSettings) 10 else 24))
+        })
         section(content, getString(R.string.carplay_controls), R.drawable.ic_dp_display) { card ->
             val gestureFingers = listOf(2, 3, 4)
             choice(card, getString(R.string.settings_gesture_fingers_label),
@@ -529,7 +535,7 @@ class DiPlayActivity : ComponentActivity() {
             card.addView(button("${getString(R.string.choose_iphone_prefix)}${DiPlayPreferences.phoneName(this)}", false) { choosePhone() }, matchButton(12, 60))
         }
         bydAdbSettings(content)
-        section(content, getString(R.string.display_and_performance), R.drawable.ic_dp_display) { card ->
+        section(content, getString(R.string.display_and_performance), R.drawable.ic_dp_display, fullWidth = true) { card ->
             val nightModes = CarPlayNightMode.entries
             choice(
                 card,
@@ -613,7 +619,7 @@ class DiPlayActivity : ComponentActivity() {
                 if (!BydOutputSettings.available(this)) clusterSongSwitch(card)
             }
         }
-        if (BydOutputSettings.available(this)) section(content, getString(R.string.byd_navigation), R.drawable.ic_dp_navigation) { card ->
+        if (BydOutputSettings.available(this)) section(content, getString(R.string.byd_navigation), R.drawable.ic_dp_navigation, fullWidth = true) { card ->
             toggle(card, getString(R.string.navigation_on_hud_and_instrument_cluster),
                 getString(R.string.show_phone_navigation_arrows_distance_and_street_names_on),
                 com.shilapi.xcertplay.hud.BydOutputSettings.enabled(this)) { com.shilapi.xcertplay.hud.BydOutputSettings.setEnabled(this, it) }
@@ -780,7 +786,7 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     private fun advancedSettings(content: LinearLayout) {
-        section(content, getString(R.string.advanced_settings), R.drawable.ic_dp_display) { card ->
+        section(content, getString(R.string.advanced_settings), R.drawable.ic_dp_display, fullWidth = advancedSettingsExpanded) { card ->
             card.addView(button(getString(if (advancedSettingsExpanded) R.string.hide_advanced_settings else R.string.show_advanced_settings), false) {
                 advancedSettingsExpanded = !advancedSettingsExpanded
                 render()
@@ -1134,21 +1140,53 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     private fun connectionSetup(content: LinearLayout) {
-        content.addView(label(getString(R.string.connection_setup), 34, TEXT, true))
-        content.addView(label(getString(R.string.set_up_once_your_details_stay_saved_for_the_next_drive_cha), 17, MUTED).apply { setPadding(0, dp(8), 0, dp(24)) })
-        section(content, getString(R.string.s_1_choose_your_connection)) { card -> wirelessLinkControls(card) }
-        section(content, getString(R.string.s_2_pair_your_iphone)) { card ->
+        if (!compactSettings) content.addView(label(getString(R.string.connection_setup), 34, TEXT, true))
+        content.addView(label(getString(R.string.set_up_once_your_details_stay_saved_for_the_next_drive_cha), 17, MUTED).apply {
+            setPadding(0, dp(if (compactSettings) 0 else 8), 0, dp(if (compactSettings) 10 else 24))
+        })
+        val connectionColumn: LinearLayout
+        val actionsColumn: LinearLayout
+        if (compactSettings) {
+            connectionColumn = column().apply { tag = COMPACT_SECTION_COLUMN }
+            actionsColumn = column().apply { tag = COMPACT_SECTION_COLUMN }
+            content.addView(row().apply {
+                gravity = Gravity.TOP
+                addView(connectionColumn, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(actionsColumn, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12) })
+            })
+        } else {
+            connectionColumn = content
+            actionsColumn = content
+        }
+        section(connectionColumn, getString(R.string.s_1_choose_your_connection)) { card -> wirelessLinkControls(card) }
+        section(actionsColumn, getString(R.string.s_2_pair_your_iphone)) { card ->
             card.addView(label(getString(R.string.keep_bluetooth_and_wi_fi_on_your_iphone_pair_with_the_car), 16, MUTED))
-            card.addView(button("${getString(R.string.choose_iphone_prefix)}${DiPlayPreferences.phoneName(this)}", false) { choosePhone() }, matchButton(12, 60))
-            card.addView(button(getString(R.string.review_app_permissions), false) {
+            val phone = button("${getString(R.string.choose_iphone_prefix)}${DiPlayPreferences.phoneName(this)}", false) { choosePhone() }
+            val permissions = button(getString(R.string.review_app_permissions), false) {
                 openSystem(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
-            }, matchButton(12, 60))
+            }
+            if (compactSettings) {
+                addPairedControl(card, phone, "connectionActions")
+                addPairedControl(card, permissions, "connectionActions")
+            } else {
+                card.addView(phone, matchButton(12, 60))
+                card.addView(permissions, matchButton(12, 60))
+            }
         }
-        section(content, getString(R.string.s_3_connect)) { card ->
-            card.addView(label(getString(R.string.return_from_car_settings_to_diplay_then_connect_accept_the), 16, MUTED))
-            card.addView(button(getString(R.string.connect_phone), true) { connect(true) }, matchButton(12, 60))
+        section(actionsColumn, getString(R.string.s_3_connect)) { card ->
+            val connect = button(getString(R.string.connect_phone), true) { connect(true) }
+            if (compactSettings) {
+                addPairedControl(card, connect, "connectionActions")
+                addPairedControl(card, button(getString(R.string.connect_with_usb), false) { connect(false) }, "connectionActions")
+                card.addView(label(getString(R.string.return_from_car_settings_to_diplay_then_connect_accept_the), 16, MUTED))
+                card.addView(label(getString(R.string.prefer_a_cable), 18, TEXT, true).apply { setPadding(0, dp(8), 0, 0) })
+                card.addView(label(getString(R.string.use_a_usb_data_cable_and_the_car_s_usb_data_port_unlock_yo), 14, MUTED))
+            } else {
+                card.addView(label(getString(R.string.return_from_car_settings_to_diplay_then_connect_accept_the), 16, MUTED))
+                card.addView(connect, matchButton(12, 60))
+            }
         }
-        section(content, getString(R.string.prefer_a_cable)) { card ->
+        if (!compactSettings) section(actionsColumn, getString(R.string.prefer_a_cable)) { card ->
             card.addView(label(getString(R.string.use_a_usb_data_cable_and_the_car_s_usb_data_port_unlock_yo), 16, MUTED))
             card.addView(button(getString(R.string.connect_with_usb), false) { connect(false) }, matchButton(12, 60))
         }
@@ -1179,8 +1217,11 @@ class DiPlayActivity : ComponentActivity() {
                     applyWirelessLink(candidate)
                 }
             }, matchButton(12, 60))
-            option.addView(label(descriptions[index], 15, MUTED).apply { setPadding(0, dp(6), 0, dp(12)) })
+            if (!compactSettings) option.addView(label(descriptions[index], 15, MUTED).apply { setPadding(0, dp(6), 0, dp(12)) })
         }
+        if (compactSettings) parent.addView(label(descriptions[modes.indexOf(mode).coerceAtLeast(0)], 14, MUTED).apply {
+            setPadding(0, dp(6), 0, dp(8))
+        })
         if (mode == WirelessHotspotMode.MANUAL) {
             parent.addView(label(getString(R.string.hotspot_setup), 22, TEXT, true))
             parent.addView(label(getString(R.string.s_1_open_car_hotspot_settings_turn_the_hotspot_on_and_sele), 16, MUTED).apply { setPadding(0, dp(8), 0, dp(12)) })
@@ -2782,8 +2823,10 @@ class DiPlayActivity : ComponentActivity() {
         }
     }
 
-    private fun section(parent: LinearLayout, title: String, icon: Int? = null, build: (LinearLayout) -> Unit) {
+    private fun section(parent: LinearLayout, title: String, icon: Int? = null, fullWidth: Boolean = false, build: (LinearLayout) -> Unit) {
         val card = card()
+        val paired = parent.tag == COMPACT_SECTIONS && !fullWidth
+        if (paired || parent.tag == COMPACT_SECTION_COLUMN) card.tag = COMPACT_HALF_CARD
         val heading = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(if (isCompactLayout) 8 else 16)) }
         if (icon != null) heading.addView(ImageView(this).apply {
             setImageResource(icon); imageTintList = ColorStateList.valueOf(ACCENT)
@@ -2792,7 +2835,17 @@ class DiPlayActivity : ComponentActivity() {
         heading.addView(label(title, 22, TEXT, true), LinearLayout.LayoutParams(0, -2, 1f))
         card.addView(heading)
         build(card)
-        parent.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(if (isCompactLayout) 10 else 18) })
+        if (paired) {
+            val previous = parent.getChildAt(parent.childCount - 1) as? LinearLayout
+            val cards = if (previous?.tag == COMPACT_SECTION_ROW && previous.childCount == 1) previous else row().apply {
+                tag = COMPACT_SECTION_ROW
+                gravity = Gravity.TOP
+                parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+            }
+            cards.addView(card, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                if (cards.childCount > 0) marginStart = dp(12)
+            })
+        } else parent.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(if (isCompactLayout) 10 else 18) })
     }
     private fun toggle(parent: LinearLayout, title: String, description: String, value: Boolean, enabled: Boolean = true, save: (Boolean) -> Unit): Switch {
         val line = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(if (isCompactLayout) 6 else 12), 0, dp(if (isCompactLayout) 6 else 12)) }
@@ -2800,7 +2853,8 @@ class DiPlayActivity : ComponentActivity() {
         line.addView(text, LinearLayout.LayoutParams(0, -2, 1f))
         val control = Switch(this).apply { contentDescription = title; isChecked = value; isEnabled = enabled; minHeight = dp(if (isCompactLayout) 48 else 56); buttonTintList = ColorStateList.valueOf(ACCENT); setOnCheckedChangeListener { _, checked -> save(checked) } }
         line.addView(control)
-        parent.addView(line)
+        if (compactSettings && parent.tag != COMPACT_HALF_CARD) addPairedControl(parent, line, "compactToggles")
+        else parent.addView(line)
         return control
     }
     // [announcesReconnect] labels a choice whose [save] reconnects by itself.
@@ -2827,18 +2881,23 @@ class DiPlayActivity : ComponentActivity() {
     }
 
     private fun addChoiceControl(parent: LinearLayout, button: Button) {
-        if (compactColumns) {
-            val previous = parent.getChildAt(parent.childCount - 1) as? LinearLayout
-            val controls = if (previous?.tag == "compactChoices" && previous.childCount == 1) previous else row().apply {
-                tag = "compactChoices"
-                parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
-            }
-            controls.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                if (controls.childCount > 0) marginStart = dp(8)
-            })
+        if (compactColumns && parent.tag != COMPACT_HALF_CARD) {
+            addPairedControl(parent, button, "compactChoices")
         } else {
             parent.addView(button, matchButton(0, 60)); parent.addView(space(12))
         }
+    }
+
+    private fun addPairedControl(parent: LinearLayout, control: View, group: String) {
+        val previous = parent.getChildAt(parent.childCount - 1) as? LinearLayout
+        val controls = if (previous?.tag == group && previous.childCount == 1) previous else row().apply {
+            tag = group
+            gravity = Gravity.CENTER_VERTICAL
+            parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+        }
+        controls.addView(control, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            if (controls.childCount > 0) marginStart = dp(8)
+        })
     }
     private fun card() = column().apply {
         background = rounded(SURFACE, BORDER)
@@ -2848,7 +2907,13 @@ class DiPlayActivity : ComponentActivity() {
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(-1, -2) }
     private fun label(value: String, size: Int, color: Int, bold: Boolean = false) = TextView(this).apply {
-        text = value; textSize = (if (isCompactLayout) when {
+        text = value; textSize = (if (compactSettings) when {
+            size >= 24 -> 20
+            size >= 22 -> 18
+            size >= 18 -> 16
+            size >= 16 -> 14
+            else -> size
+        } else if (isCompactLayout) when {
             size >= 30 -> 24
             size >= 22 -> 20
             size >= 18 -> 16
@@ -2871,6 +2936,10 @@ class DiPlayActivity : ComponentActivity() {
     private fun space(height: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(1, dp(if (isCompactLayout) (height / 2).coerceAtMost(12) else height)) }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     companion object {
+        private const val COMPACT_SECTIONS = "compactSettingsSections"
+        private const val COMPACT_SECTION_ROW = "compactSettingsSectionRow"
+        private const val COMPACT_SECTION_COLUMN = "compactSettingsSectionColumn"
+        private const val COMPACT_HALF_CARD = "compactSettingsHalfCard"
         private const val BYD_VEHICLE_TAG = "DiPlay-BYD13"
         private const val VEHICLE_VALIDATION_RETRY_MILLIS = 500L
         private const val ADB_KEY_SAVE_WAIT_MILLIS = 500L
