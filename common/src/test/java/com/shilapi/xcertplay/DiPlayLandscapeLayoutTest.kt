@@ -9,6 +9,7 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ScrollView
 import android.widget.TextView
 import com.shilapi.xcertplay.network.WifiP2pChannels
@@ -77,16 +78,16 @@ class DiPlayLandscapeLayoutTest {
         preview(root, "mi10-display-settings")
         resolution.performClick()
         val dialog = ShadowAlertDialog.getLatestAlertDialog()
-        dialog.listView.performItemClick(null, 1, 1L)
+        descendants(dialog.window!!.decorView).filterIsInstance<EditText>().single().setText("57")
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
         shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(8, AirPlayPersistence.loadDisplayScaleTenths(activity))
+        assertEquals(57, AirPlayPersistence.loadDisplayScalePercent(activity))
         resolution.performClick()
         val cancelled = ShadowAlertDialog.getLatestAlertDialog()
-        cancelled.listView.performItemClick(null, 2, 2L)
+        descendants(cancelled.window!!.decorView).filterIsInstance<EditText>().single().setText("83")
         cancelled.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
         shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(8, AirPlayPersistence.loadDisplayScaleTenths(activity))
+        assertEquals(57, AirPlayPersistence.loadDisplayScalePercent(activity))
         scroll.scrollTo(0, scroll.getChildAt(0).height)
         assertTrue(scroll.scrollY > 0)
         assertEquals(before, bounds(root, back))
@@ -94,23 +95,50 @@ class DiPlayLandscapeLayoutTest {
         assertNotNull(button(layout(), R.string.connect_phone))
     }
 
-    @Test fun rotationPreservesThePageAndPortraitKeepsItsNormalLayout() {
+    @Test fun rotationPreservesThePageAndNarrowPortraitKeepsPrimaryActionsAccessible() {
         create()
         button(layout(), R.string.settings).performClick()
         RuntimeEnvironment.setQualifiers("zh-rCN-w393dp-h800dp-port-xhdpi")
         activity.onConfigurationChanged(activity.resources.configuration)
         assertNotNull(button(layout(), R.string.back))
-        assertTrue(button(layout(), R.string.back).height >= dp(56))
+        assertTrue(button(layout(), R.string.back).height >= dp(48))
         button(layout(), R.string.back).performClick()
         val portrait = layout()
-        assertTrue(descendants(portrait).filterIsInstance<TextView>()
-            .any { it.text == activity.getString(R.string.a_familiar_drive) })
+        listOf(R.string.connect_phone, R.string.choose_iphone, R.string.connect_with_usb,
+            R.string.connection_setup, R.string.settings).forEach { id ->
+            val action = button(portrait, id)
+            assertTrue(action.height >= dp(48))
+            assertTrue(bounds(portrait, action).bottom <= portrait.height)
+        }
         RuntimeEnvironment.setQualifiers("zh-rCN-w800dp-h393dp-land-xhdpi")
         activity.onConfigurationChanged(activity.resources.configuration)
         val landscape = layout()
         assertFalse(descendants(landscape).filterIsInstance<TextView>()
             .any { it.text == activity.getString(R.string.a_familiar_drive) })
         assertTrue(bounds(landscape, button(landscape, R.string.connect_with_usb)).bottom <= landscape.height)
+    }
+
+    @Test fun narrowWindowKeepsNavigationVisibleWhileSettingsScroll() {
+        RuntimeEnvironment.setQualifiers("zh-rCN-w360dp-h300dp-land-xhdpi")
+        create()
+        var root = layout()
+        val headerSettings = buttons(root).first { it.text == activity.getString(R.string.settings) }
+        assertTrue(bounds(root, headerSettings).right <= root.width)
+        assertTrue(headerSettings.height >= dp(48))
+        assertNotNull(button(root, R.string.connection_setup))
+        headerSettings.performClick()
+        root = layout()
+        val back = button(root, R.string.back)
+        val before = bounds(root, back)
+        val scroll = descendants(root).filterIsInstance<ScrollView>().single()
+        scroll.scrollTo(0, scroll.getChildAt(0).height)
+        assertTrue(scroll.scrollY > 0)
+        assertEquals(before, bounds(root, back))
+        assertTrue(before.right <= root.width && before.top >= 0 && before.bottom <= root.height)
+        assertTrue(back.width >= dp(48) && back.height >= dp(48))
+        preview(root, "mi10-narrow-window")
+        back.performClick()
+        assertNotNull(button(layout(), R.string.connect_phone))
     }
 
     @Test fun upstreamChannelChoiceAndScrollRestorationWorkInCompactConnectionPage() {
