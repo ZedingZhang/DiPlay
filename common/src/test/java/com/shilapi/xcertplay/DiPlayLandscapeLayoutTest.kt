@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.TextView
 import com.shilapi.xcertplay.network.WifiP2pChannels
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
@@ -36,6 +37,139 @@ class DiPlayLandscapeLayoutTest {
     private lateinit var activity: DiPlayActivity
 
     @After fun cleanUp() { CarPlayBackgroundSession.clear() }
+
+    @Test fun settingsShowTwoCompleteGroupsAndMoreSectionsAboveTheFold() {
+        create()
+        button(layout(), R.string.settings).performClick()
+        val root = layout()
+        val controls = sectionBounds(root, R.string.carplay_controls)
+        val connection = sectionBounds(root, R.string.connection_setup)
+        assertEquals(controls.top, connection.top)
+        assertTrue(controls.right < connection.left)
+        assertTrue(controls.bottom <= root.height)
+        assertTrue(connection.bottom <= root.height)
+        listOf(R.string.diagnostics, R.string.automatic_connection).forEach { id ->
+            assertTrue("${activity.getString(id)} should be visible", bounds(root, text(root, id)).bottom <= root.height)
+        }
+        val gesture = buttons(root).single { it.text.startsWith(activity.getString(R.string.settings_gesture_fingers_label)) }
+        gesture.performClick()
+        var dialog = ShadowAlertDialog.getLatestAlertDialog()
+        dialog.listView.performItemClick(null, 2, 2L)
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(3, AirPlayPersistence.loadSettingsGestureFingers(activity))
+        gesture.performClick()
+        dialog = ShadowAlertDialog.getLatestAlertDialog()
+        dialog.listView.performItemClick(null, 2, 2L)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(4, AirPlayPersistence.loadSettingsGestureFingers(activity))
+        val switches = descendants(root).filterIsInstance<Switch>()
+        val hevc = switches.single { it.contentDescription == activity.getString(R.string.efficient_video) }
+        val drive = switches.single { it.contentDescription == activity.getString(R.string.right_hand_drive) }
+        assertEquals(bounds(root, hevc).top, bounds(root, drive).top)
+        assertTrue(bounds(root, hevc).right < bounds(root, drive).left)
+        preview(root, "mi10-settings-two-column")
+    }
+
+    @Test fun connectionModesAndPairingShareTheFirstScreenWithWirelessAndUsbActions() {
+        create()
+        button(layout(), R.string.connection_setup).performClick()
+        for (mode in listOf(WirelessHotspotMode.MANUAL, WirelessHotspotMode.WIFI_P2P)) {
+            AirPlayPersistence.saveWirelessHotspotMode(activity, mode)
+            render()
+            val root = layout()
+            val first = text(root, R.string.s_1_choose_your_connection)
+            val second = text(root, R.string.s_2_pair_your_iphone)
+            assertEquals(bounds(root, first).top, bounds(root, second).top)
+            assertTrue(bounds(root, first).right < bounds(root, second).left)
+            val wireless = button(root, R.string.connect_phone)
+            val usb = button(root, R.string.connect_with_usb)
+            assertEquals(bounds(root, wireless).top, bounds(root, usb).top)
+            listOf(wireless, usb, button(root, R.string.review_app_permissions)).forEach { action ->
+                assertTrue("${action.text} below the viewport", bounds(root, action).bottom <= root.height)
+                assertTrue(action.height >= dp(48) && action.width >= dp(48))
+            }
+            val shown = if (mode == WirelessHotspotMode.MANUAL) R.string.hotspot_mode_manual_desc else R.string.hotspot_mode_p2p_desc
+            val hidden = if (mode == WirelessHotspotMode.MANUAL) R.string.hotspot_mode_p2p_desc else R.string.hotspot_mode_manual_desc
+            assertNotNull(text(root, shown))
+            assertFalse(descendants(root).filterIsInstance<TextView>().any { it.text == activity.getString(hidden) })
+            preview(root, "mi10-connection-${mode.name.lowercase()}")
+        }
+    }
+
+    @Test fun compactHotspotSetupStillRequiresSaveAndCancelKeepsWifiDirect() {
+        create()
+        AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.WIFI_P2P)
+        button(layout(), R.string.connection_setup).performClick()
+        button(layout(), R.string.built_in_car_hotspot).performClick()
+        assertEquals(WirelessHotspotMode.WIFI_P2P, AirPlayPersistence.loadWirelessHotspotMode(activity))
+        button(layout(), R.string.save_hotspot_details_and_use_this_mode).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        var dialog = ShadowAlertDialog.getLatestAlertDialog()
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+        assertEquals(WirelessHotspotMode.WIFI_P2P, AirPlayPersistence.loadWirelessHotspotMode(activity))
+        button(layout(), R.string.save_hotspot_details_and_use_this_mode).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        dialog = ShadowAlertDialog.getLatestAlertDialog()
+        val fields = descendants(dialog.window!!.decorView).filterIsInstance<EditText>()
+        fields[0].setText("Landscape test hotspot")
+        fields[1].setText("12345678")
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        assertEquals(WirelessHotspotMode.MANUAL, AirPlayPersistence.loadWirelessHotspotMode(activity))
+        assertEquals("Landscape test hotspot", AirPlayPersistence.loadManualHotspotSsid(activity))
+        assertNotNull(button(layout(), R.string.connect_with_usb))
+    }
+
+    @Test @Config(qualifiers = "zh-rCN-w580dp-h330dp-land-xhdpi")
+    fun narrowSettingsKeepOneColumnWithoutSqueezingTheGroups() {
+        create()
+        button(layout(), R.string.settings).performClick()
+        val root = layout()
+        val controls = sectionBounds(root, R.string.carplay_controls)
+        val connection = sectionBounds(root, R.string.connection_setup)
+        assertEquals(controls.left, connection.left)
+        assertEquals(controls.right, connection.right)
+        assertTrue(controls.bottom < connection.top)
+        buttons(root).forEach { assertTrue(it.height >= dp(48)) }
+    }
+
+    @Test @Config(qualifiers = "zh-rCN-w1024dp-h600dp-land-xhdpi")
+    fun carSizedSettingsRetainTheOriginalFullWidthSectionsAndLargeButtons() {
+        create()
+        button(layout(), R.string.settings).performClick()
+        val root = layout()
+        val controls = sectionBounds(root, R.string.carplay_controls)
+        val connection = sectionBounds(root, R.string.connection_setup)
+        assertEquals(controls.left, connection.left)
+        assertEquals(controls.right, connection.right)
+        assertTrue(controls.bottom < connection.top)
+        assertEquals(34f * activity.resources.displayMetrics.scaledDensity, text(root, R.string.your_drive_your_way).textSize, .1f)
+        buttons(root).forEach { assertTrue(it.height >= dp(56)) }
+    }
+
+    @Test fun bothSettingsPagesWrapLargeEnglishTextWithoutClippingControls() {
+        RuntimeEnvironment.setQualifiers("en-w800dp-h343dp-land-xhdpi")
+        create()
+        val config = Configuration(activity.resources.configuration).apply { fontScale = 1.3f }
+        @Suppress("DEPRECATION")
+        activity.resources.updateConfiguration(config, activity.resources.displayMetrics)
+        button(layout(), R.string.settings).performClick()
+        for (page in listOf("settings", "connection")) {
+            ReflectionHelpers.setField(activity, "page", page)
+            render()
+            val root = layout()
+            preview(root, "phone-$page-english-large-text")
+            buttons(root).forEach { control ->
+                assertTrue("${control.javaClass.simpleName} ${control.text} target=${control.width}x${control.height} minimum=${dp(48)} visibility=${control.visibility}",
+                    control.height >= dp(48) && control.width >= dp(48))
+                val lines = requireNotNull(control.layout)
+                assertTrue("${control.text} clipped", lines.getLineBottom(lines.lineCount - 1) <=
+                    control.height - control.compoundPaddingTop - control.compoundPaddingBottom)
+            }
+            preview(root, "phone-$page-english-large-text")
+        }
+    }
 
     @Test fun connectedPhoneActionsFitAboveTheFoldWithAccessibleTouchTargets() {
         create()
@@ -249,6 +383,8 @@ class DiPlayLandscapeLayoutTest {
         if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
 
     private fun buttons(root: View) = descendants(root).filterIsInstance<Button>()
+    private fun text(root: View, id: Int) = descendants(root).filterIsInstance<TextView>().first { it.text == activity.getString(id) }
+    private fun sectionBounds(root: ViewGroup, id: Int) = bounds(root, text(root, id).parent.parent as View)
     private fun button(root: View, id: Int) = buttons(root).first { it.text.toString() == activity.getString(id) }
     private fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
     private fun bounds(root: ViewGroup, view: View) = Rect(0, 0, view.width, view.height).also {

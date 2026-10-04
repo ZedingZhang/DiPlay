@@ -40,7 +40,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".hudtest"
-            versionNameSuffix = "-unified-settings-hud-test"
+            versionNameSuffix = "-phone-settings-hud-test"
         }
         release {
             optimization {
