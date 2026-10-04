@@ -11,6 +11,8 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
+import com.shilapi.xcertplay.network.WifiP2pChannels
+import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import com.shilapi.xcertplay.host.R
 import java.io.File
 import org.junit.After
@@ -109,6 +111,35 @@ class DiPlayLandscapeLayoutTest {
         assertFalse(descendants(landscape).filterIsInstance<TextView>()
             .any { it.text == activity.getString(R.string.a_familiar_drive) })
         assertTrue(bounds(landscape, button(landscape, R.string.connect_with_usb)).bottom <= landscape.height)
+    }
+
+    @Test fun upstreamChannelChoiceAndScrollRestorationWorkInCompactConnectionPage() {
+        create()
+        AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.WIFI_P2P)
+        button(layout(), R.string.connection_setup).performClick()
+        var root = layout()
+        fun channelControl() = buttons(root).first {
+            it.text.startsWith(activity.getString(R.string.wifi_direct_channel_summary, ""))
+        }
+        val control = channelControl()
+        assertTrue(control.height >= dp(48))
+        control.performClick()
+        val dialog = ShadowAlertDialog.getLatestAlertDialog()
+        val channelIndex = (listOf(WifiP2pChannels.AUTO) + WifiP2pChannels.channels).indexOf(6)
+        dialog.listView.performItemClick(null, channelIndex, channelIndex.toLong())
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(6, AirPlayPersistence.loadWifiP2pPreferredChannel(activity))
+        val scroll = descendants(root).filterIsInstance<ScrollView>().single()
+        scroll.scrollTo(0, scroll.getChildAt(0).height)
+        val position = scroll.scrollY
+        assertTrue(position > 0)
+        render()
+        root = layout()
+        assertEquals(position, descendants(root).filterIsInstance<ScrollView>().single().scrollY)
+        assertTrue(channelControl().text.toString().contains("6"))
+        assertTrue(bounds(root, button(root, R.string.back)).bottom <= dp(60))
+        preview(root, "mi10-upstream-channel-settings")
     }
 
     @Test

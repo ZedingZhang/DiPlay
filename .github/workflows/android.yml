@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       standalone_test_apk:
-        description: Build an installable test APK using the published 0.2.10 runtime identity
+        description: Build an installable test APK using the published 0.2.11 runtime identity
         type: boolean
         default: false
 permissions:
@@ -33,15 +33,15 @@ jobs:
       - name: Build standalone phone test APK
         if: github.event_name == 'workflow_dispatch' && inputs.standalone_test_apk
         run: |
-          curl --fail --location --retry 3 --output "$RUNNER_TEMP/DiPlay-0.2.10.apk" \
-            https://github.com/shihabal3amri/DiPlay/releases/download/v0.2.10/DiPlay-0.2.10.apk
-          echo "8c555ce179f30a30b659914f70355245a594f82957424bf44fc532fb1409441e  $RUNNER_TEMP/DiPlay-0.2.10.apk" | sha256sum --check
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/DiPlay-0.2.11.apk" \
+            https://github.com/shihabal3amri/DiPlay/releases/download/v0.2.11/DiPlay-0.2.11.apk
+          echo "57a3f5daf02af82f636baee26f28a475e04013de8174176c62d97d300498e4c9  $RUNNER_TEMP/DiPlay-0.2.11.apk" | sha256sum --check
           python3 - <<'PY'
           import os
           from pathlib import Path
           from zipfile import ZipFile
           root = Path(os.environ['RUNNER_TEMP']) / 'diplay-test-runtime'
-          with ZipFile(Path(os.environ['RUNNER_TEMP']) / 'DiPlay-0.2.10.apk') as apk:
+          with ZipFile(Path(os.environ['RUNNER_TEMP']) / 'DiPlay-0.2.11.apk') as apk:
               for name in ('identity.pk8', 'certificate.p7b'):
                   target = root / 'offline-mfi' / name
                   target.parent.mkdir(parents=True, exist_ok=True)
@@ -58,7 +58,7 @@ jobs:
           from pathlib import Path
           from zipfile import ZipFile
           badging = (Path(os.environ['RUNNER_TEMP']) / 'phone-test-badging.txt').read_text()
-          assert "package: name='com.shihab.diplay.hudtest' versionCode='29' versionName='0.2.10-hud-test'" in badging
+          assert "package: name='com.shihab.diplay.hudtest' versionCode='30' versionName='0.2.11-hud-test'" in badging
           print(badging.splitlines()[0])
           apk_path = Path('mobile/build/outputs/apk/debug/mobile-debug.apk')
           runtime = Path(os.environ['RUNNER_TEMP']) / 'diplay-test-runtime' / 'offline-mfi'
@@ -68,10 +68,10 @@ jobs:
               assert any(name.startswith('lib/arm64-v8a/') and name.endswith('.so') for name in apk.namelist())
           output = Path('mobile/build/outputs/standalone-test')
           output.mkdir(parents=True, exist_ok=True)
-          target = output / 'DiPlay-0.2.10-phone-test.apk'
+          target = output / 'DiPlay-0.2.11-phone-test.apk'
           target.write_bytes(apk_path.read_bytes())
           (output / 'SHA256SUMS.txt').write_text(hashlib.sha256(target.read_bytes()).hexdigest() + '  ' + target.name + '\n')
-          (output / 'SOURCE.txt').write_text('Source commit: ' + os.environ['GITHUB_SHA'] + '\nPackage: com.shihab.diplay.hudtest\nVersion: 0.2.10-hud-test (29)\nUpstream release commit: 3e43e25c55921bdf5149f5f92851acf202ed353a\nRuntime identity: published DiPlay 0.2.10\n')
+          (output / 'SOURCE.txt').write_text('Source commit: ' + os.environ['GITHUB_SHA'] + '\nPackage: com.shihab.diplay.hudtest\nVersion: 0.2.11-hud-test (30)\nUpstream release commit: 6014025c653c4dae88d319ce446e0bf1ddb658ea\nRuntime identity: published DiPlay 0.2.11\n')
           print('Verified runtime identity assets and arm64 libraries in standalone APK')
           PY
       - name: Upload standalone test APK
