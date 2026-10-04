@@ -1,6 +1,8 @@
 package com.shilapi.xcertplay
 
 import android.graphics.Matrix
+import android.content.pm.ActivityInfo
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
@@ -139,6 +141,96 @@ class CarPlayHostDisplaySizeTest {
         assertEquals(1, getField("restartGeneration"))
         assertTrue(getField("handshakeResetInProgress") as Boolean)
         assertNull(getField("sessionDisplay"))
+    }
+
+    @Test @Config(sdk = [30]) fun rotatingSettingsAndReturningKeepsTheLockedCanvasAndSession() {
+        val display = startSession(rotation = Surface.ROTATION_90)
+        val screen = shadowOf(activity.windowManager.defaultDisplay)
+        screen.setRotation(Surface.ROTATION_90)
+        setField("lockedCarPlayRotation", Surface.ROTATION_90)
+        setField("lockedCarPlayOrientation", ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+        invoke("onPause")
+
+        screen.setRotation(Surface.ROTATION_0)
+        scheduleSize(990, 1920)
+        applySize(990, 1920)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+        assertEquals(size(1920, 990), getField("activeDisplaySize"))
+        assertNull(getField("pendingDisplaySize"))
+
+        invoke("onResume")
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, activity.requestedOrientation)
+        // Android may deliver one last settings-sized layout before restoring the host.
+        applySize(990, 1920)
+        screen.setRotation(Surface.ROTATION_90)
+        scheduleSize(1920, 990)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+        assertSame(display, getField("sessionDisplay"))
+        assertEquals(0, getField("restartGeneration"))
+        assertFalse(getField("handshakeResetInProgress") as Boolean)
+    }
+
+    @Test @Config(sdk = [30]) fun lockedHostIgnoresOtherRotationsIncludingSameSizeHalfTurns() {
+        for ((rotation, request) in listOf(
+            Surface.ROTATION_0 to ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+            Surface.ROTATION_90 to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            Surface.ROTATION_180 to ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
+            Surface.ROTATION_270 to ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+        )) {
+            val display = startSession(rotation = rotation)
+            setField("lockedCarPlayRotation", rotation)
+            setField("lockedCarPlayOrientation", request)
+            for (other in (0..3).filter { it != rotation }) {
+                shadowOf(activity.windowManager.defaultDisplay).setRotation(other)
+                scheduleSize(1920, 990)
+                applySize(990, 1920)
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+                assertSame(display, getField("sessionDisplay"))
+                assertEquals(size(1920, 990), getField("activeDisplaySize"))
+                assertEquals(0, getField("restartGeneration"))
+            }
+        }
+    }
+
+    @Test @Config(sdk = [30]) fun orientationSurvivesActivityStateWhileSettingsArePortrait() {
+        val original = Bundle().apply {
+            putInt("carplay_locked_orientation", ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE)
+            putInt("carplay_locked_rotation", Surface.ROTATION_270)
+        }
+        val restore = activity.javaClass.getDeclaredMethod("restoreCarPlayOrientation", Bundle::class.java)
+            .apply { isAccessible = true }
+        restore.invoke(activity, original)
+        val saved = Bundle()
+        // Saved-state callbacks require a created ComponentActivity, unlike the lightweight
+        // host used by the size-only tests above. Exercise the real create/save path here.
+        val createdController = Robolectric.buildActivity(CarPlayHostActivity::class.java)
+        val createdHost = createdController.get()
+        try {
+            createdController.create(original)
+            createdController.saveInstanceState(saved)
+        } finally {
+            createdController.destroy()
+            for (name in listOf("teardownExecutor", "airPlayCommandExecutor")) {
+                (createdHost.javaClass.getDeclaredField(name).apply { isAccessible = true }
+                    .get(createdHost) as ExecutorService).shutdownNow()
+            }
+        }
+        shadowOf(activity.windowManager.defaultDisplay).setRotation(Surface.ROTATION_0)
+        setField("lockedCarPlayRotation", null)
+        setField("lockedCarPlayOrientation", null)
+        restore.invoke(activity, saved)
+        assertEquals(Surface.ROTATION_270, getField("lockedCarPlayRotation"))
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE, activity.requestedOrientation)
+    }
+
+    @Test @Config(sdk = [30]) fun pausingCancelsATemporaryResizeBeforeItCanRestartCarPlay() {
+        val display = startSession()
+        scheduleSize(990, 1920)
+        invoke("onPause")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600))
+        assertNull(getField("pendingDisplaySize"))
+        assertSame(display, getField("sessionDisplay"))
+        assertEquals(0, getField("restartGeneration"))
     }
 
     @Test fun rotationIsHandledEvenIfTheViewSizeIsUnchanged() {
@@ -378,7 +470,8 @@ class CarPlayHostDisplaySizeTest {
     }
 
     @Test fun adoptingABackgroundSessionPreservesItsCanvasOnResize() {
-        val display = CarPlaySessionDisplay(1536, 792, Surface.ROTATION_0, true, true, 1920, 990)
+        val display = CarPlaySessionDisplay(1536, 792, Surface.ROTATION_0, true, true, 1920, 990,
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
         val sink = AndroidMediaSink()
         val controller = CarPlayController(activity,
             CarPlayRuntimeConfig(mfiTarget = MfiTarget.LOCAL, identification = Iap2IdentificationConfig(
@@ -390,6 +483,9 @@ class CarPlayHostDisplaySizeTest {
             object : AirPlayMediaHandler {}, {})
         try {
             CarPlayBackgroundSession.store(controller, sink, 1920, 990, Any(), display) {}
+            activity.javaClass.getDeclaredMethod("restoreCarPlayOrientation", Bundle::class.java)
+                .apply { isAccessible = true }.invoke(activity, null)
+            assertEquals(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, activity.requestedOrientation)
             val adopted = activity.javaClass.getDeclaredMethod("adoptBackgroundSession")
                 .apply { isAccessible = true }.invoke(activity)
             assertEquals(true, adopted)

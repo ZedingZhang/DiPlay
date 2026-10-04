@@ -66,7 +66,9 @@ object AppLocale {
             return context
         }
         val locale = locale(preference(context)) ?: return context
-        val configuration = Configuration(context.resources.configuration).apply {
+        // Override only language. Copying the whole configuration pins the old window size
+        // and orientation on Android 12 and earlier when this context follows a rotation.
+        val configuration = Configuration().apply {
             setLocale(locale)
             setLayoutDirection(locale)
         }

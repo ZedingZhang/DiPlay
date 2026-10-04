@@ -55,6 +55,13 @@ Connect until CarPlay renders. In Settings > Display and performance, select Lar
 
 The diagnostic report must name the selected preset and request a different canvas for each size. For a 2250x1080 surface at native resolution, Large requests 1956x940, Medium 2250x1080, and Small 2648x1270. Small requires hardware decoder support for the enlarged canvas and selected frame rate. If unsupported, the effective canvas falls back to Medium with an explicit reason in the report; the saved Small preference remains available for the next connection or a lower resolution. Rotating the display and camera-window resizing must continue to map touch to the negotiated canvas.
 
+## Settings rotation and locked CarPlay direction
+
+- On Xiaomi Mi 10 / Android 11, set the app language to Simplified Chinese. Rotate Home, Settings and Connection setup between portrait and both landscape directions. Each page must follow the phone and use the compact two-column settings layout in landscape.
+- Connect with the phone already in landscape. While the CarPlay picture is visible, rotate through portrait, reverse landscape and upside-down portrait, waiting at least 10 seconds each time. CarPlay must keep its original direction and picture without showing preparation or reconnecting. Repeat after starting a fresh connection in portrait and in reverse landscape.
+- Open Settings with the configured three-finger swipe while CarPlay is connected. Rotate the settings page, then return to CarPlay without changing settings. CarPlay must restore its original locked direction and keep the existing session. Repeat several times; the log must not contain a rotation-triggered `Display changed` reconnect.
+- In Settings, deliberately change CarPlay size or resolution and apply. The requested reconnect must still happen, using the original CarPlay direction. Disconnect completely, rotate Settings to another direction and connect again; this new session must lock the newly selected direction.
+
 ## Preferred Wi-Fi Direct channel
 
 - In **Settings → Connection setup → Wi-Fi Direct**, confirm **Preferred channel: Auto** on a fresh install. Select channel 149 and Cancel; Auto must remain selected. Select 149 and Save, reopen the chooser and restart the app to confirm it stays saved.
