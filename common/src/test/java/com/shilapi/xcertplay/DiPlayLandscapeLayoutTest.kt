@@ -56,11 +56,13 @@ class DiPlayLandscapeLayoutTest {
         var dialog = ShadowAlertDialog.getLatestAlertDialog()
         dialog.listView.performItemClick(null, 2, 2L)
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
         assertEquals(3, AirPlayPersistence.loadSettingsGestureFingers(activity))
         gesture.performClick()
         dialog = ShadowAlertDialog.getLatestAlertDialog()
         dialog.listView.performItemClick(null, 2, 2L)
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
         assertEquals(4, AirPlayPersistence.loadSettingsGestureFingers(activity))
         val switches = descendants(root).filterIsInstance<Switch>()
         val hevc = switches.single { it.contentDescription == activity.getString(R.string.efficient_video) }
@@ -157,8 +159,10 @@ class DiPlayLandscapeLayoutTest {
             ReflectionHelpers.setField(activity, "page", page)
             render()
             val root = layout()
+            preview(root, "phone-$page-english-large-text")
             buttons(root).forEach { control ->
-                assertTrue(control.height >= dp(48) && control.width >= dp(48))
+                assertTrue("${control.text} target=${control.width}x${control.height} minimum=${dp(48)} visibility=${control.visibility}",
+                    control.height >= dp(48) && control.width >= dp(48))
                 val lines = requireNotNull(control.layout)
                 assertTrue("${control.text} clipped", lines.getLineBottom(lines.lineCount - 1) <=
                     control.height - control.compoundPaddingTop - control.compoundPaddingBottom)
