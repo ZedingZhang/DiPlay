@@ -745,6 +745,8 @@ class CarPlayHostActivity : ComponentActivity() {
             systemBarsChanged = hideTopBar != savedHideTopBar || hideBottomBar != savedHideBottomBar
             hideTopBar = savedHideTopBar
             hideBottomBar = savedHideBottomBar
+            debugLogsEnabled = AirPlayPersistence.loadDebugLogsEnabled(this)
+            updateDebugOverlays()
         }
         maybeStartCarPlay()
         applyFullscreenMode()
@@ -1213,10 +1215,6 @@ class CarPlayHostActivity : ComponentActivity() {
             insets
         }
         ViewCompat.requestApplyInsets(viewport)
-        settingsMenu = buildSettingsMenu().apply { visibility = View.GONE }
-        root.addView(settingsMenu, FrameLayout.LayoutParams(-1, -1))
-        safeAreaEditor = buildSafeAreaEditor().apply { visibility = View.GONE }
-        root.addView(safeAreaEditor, FrameLayout.LayoutParams(-1, -1))
         videoView = video
         gestureOverlay = gestureLayer
         settingsGestureHint = gestureHint
@@ -3920,17 +3918,30 @@ class CarPlayHostActivity : ComponentActivity() {
         }
     }
 
+    internal fun settingsDisplaySize(): Pair<Int, Int>? =
+        currentActivitySize()?.let { it.width to it.height }
+
     private fun showDiPlayHome(page: String = "home") {
         controller?.sendTouch(emptyList())
         startActivity(Intent(this, DiPlayActivity::class.java)
             .putExtra("page", page).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
     }
 
-    private fun openSettingsMenu() {
+    private fun openSettingsMenu() = showDiPlayHome("settings")
+
+    // Retained for upstream compatibility checks; user settings entrances use DiPlayActivity.
+    private fun openLegacySettingsMenu() {
         if (menuOpen) return
         controller?.sendTouch(emptyList())
         loadPersistedSettings()
         settingsBaseline = captureSettingsBaseline()
+        if (settingsMenu == null) {
+            val root = videoView?.parent as? FrameLayout ?: return
+            settingsMenu = buildSettingsMenu().apply { visibility = View.GONE }
+            root.addView(settingsMenu, FrameLayout.LayoutParams(-1, -1))
+            safeAreaEditor = buildSafeAreaEditor().apply { visibility = View.GONE }
+            root.addView(safeAreaEditor, FrameLayout.LayoutParams(-1, -1))
+        }
         // Rebuild controls from saved values so a cancelled edit cannot reappear on reopening.
         settingsMenu?.let { previous ->
             val parent = previous.parent as ViewGroup
@@ -4364,6 +4375,8 @@ internal object CarPlayBackgroundSession {
     private var owner: Any? = null
     @Synchronized fun isOwner(candidate: Any): Boolean = owner === candidate
     @Synchronized fun hasSession(): Boolean = stopAction != null || stopping
+    @Synchronized fun displaySize(): Pair<Int, Int>? =
+        (owner as? CarPlayHostActivity)?.settingsDisplaySize()
     private val stopWaiters = mutableListOf<() -> Unit>()
 
     fun stop(completion: () -> Unit = {}) {

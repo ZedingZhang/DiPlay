@@ -66,18 +66,21 @@ class CarPlayHostSettingsTest {
         controllers.close()
     }
 
-    @Test fun configuredFingerCountsOpenTheMountedMenuWithoutLeavingCarPlay() {
+    @Test fun configuredFingerCountsOpenTheUnifiedSettingsWithoutStoppingCarPlay() {
         assertEquals(3, AirPlayPersistence.loadSettingsGestureFingers(activity))
+        val controller = attachController()
         for (fingers in 2..4) {
             AirPlayPersistence.saveSettingsGestureFingers(activity, fingers)
             invoke("loadPersistedSettings")
             gesture(fingers)
-            assertTrue(field("menuOpen") as Boolean)
-            assertEquals(View.VISIBLE, menu().visibility)
-            assertNotNull(menu().parent)
-            assertEquals(View.GONE, (field("gestureOverlay") as View).visibility)
-            assertNull(shadowOf(activity).nextStartedActivity)
-            invoke("cancelSettingsEdits")
+            val intent = requireNotNull(shadowOf(activity).nextStartedActivity)
+            assertEquals(DiPlayActivity::class.java.name, intent.component!!.className)
+            assertEquals("settings", intent.getStringExtra("page"))
+            assertTrue(intent.flags and Intent.FLAG_ACTIVITY_REORDER_TO_FRONT != 0)
+            assertFalse(field("menuOpen") as Boolean)
+            assertNull(field("settingsMenu"))
+            assertSame(controller, field("controller"))
+            assertEquals(0, field("restartGeneration"))
         }
     }
 
@@ -89,11 +92,14 @@ class CarPlayHostSettingsTest {
                 if (actual == configured) continue
                 gesture(actual)
                 assertFalse(field("menuOpen") as Boolean)
+                assertNull(shadowOf(activity).nextStartedActivity)
             }
             gesture(configured, x = 1000f, y = 130f)
             assertFalse(field("menuOpen") as Boolean)
+            assertNull(shadowOf(activity).nextStartedActivity)
             gesture(configured, y = -500f)
             assertFalse(field("menuOpen") as Boolean)
+            assertNull(shadowOf(activity).nextStartedActivity)
         }
     }
 
@@ -105,14 +111,15 @@ class CarPlayHostSettingsTest {
         touch(MotionEvent.ACTION_POINTER_DOWN, 3, 100f)
         touch(MotionEvent.ACTION_MOVE, 3, 700f)
         assertFalse(field("menuOpen") as Boolean)
+        assertNull(shadowOf(activity).nextStartedActivity)
         touch(MotionEvent.ACTION_UP, 1, 700f)
         gesture(3)
-        assertTrue(field("menuOpen") as Boolean)
+        assertEquals("settings", requireNotNull(shadowOf(activity).nextStartedActivity).getStringExtra("page"))
     }
 
     @Test fun openingAndCancellingKeepsTheCurrentControllerAndRestoresControls() {
         val controller = attachController()
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         val original = AirPlayPersistence.loadDisplayScaleTenths(activity)
         resolutionSlider().progress = 0
         gestureButton().performClick()
@@ -122,14 +129,14 @@ class CarPlayHostSettingsTest {
         assertEquals(0, field("restartGeneration"))
         assertEquals(original, field("displayScaleTenths"))
         assertEquals(3, field("gestureFingerCount"))
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         assertEquals(original * 10 - 30, resolutionSlider().progress)
         assertEquals(activity.getString(R.string.settings_gesture_fingers, 3), gestureButton().text)
     }
 
     @Test fun customResolutionSurvivesCancelAndUnrelatedSettingsSave() {
         AirPlayPersistence.saveDisplayScalePercent(activity, 73)
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         val slider = resolutionSlider()
         assertEquals(43, slider.progress)
         val listener = SeekBar::class.java.getDeclaredField("mOnSeekBarChangeListener")
@@ -139,7 +146,7 @@ class CarPlayHostSettingsTest {
         invoke("cancelSettingsEdits")
         assertEquals(73, field("displayScalePercent"))
         assertEquals(73, AirPlayPersistence.loadDisplayScalePercent(activity))
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         invoke("persistMenuSettings")
         assertEquals(73, AirPlayPersistence.loadDisplayScalePercent(activity))
         listener.onProgressChanged(slider, 0, true)
@@ -148,7 +155,7 @@ class CarPlayHostSettingsTest {
     }
 
     @Test fun resumingWithTheMenuOpenPreservesUnsavedConnectionEdits() {
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         setField("wirelessHotspotMode", WirelessHotspotMode.MANUAL)
         setField("manualHotspotSsid", "Draft hotspot")
         setField("mfiTarget", MfiTarget.LOCAL)
@@ -163,7 +170,7 @@ class CarPlayHostSettingsTest {
 
     @Test fun savingPersistsSettingsAndRestartsOnce() {
         attachController()
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         resolutionSlider().progress = 0
         gestureButton().performClick()
         invoke("saveSettingsAndReconnect")
@@ -176,7 +183,7 @@ class CarPlayHostSettingsTest {
 
     @Test fun failedStartupWhileMenuIsOpenRecoversOnCancel() {
         attachController()
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         report(CarPlayStatus.Failed("Authentication failed"))
         assertEquals(0, field("restartGeneration"))
         invoke("cancelSettingsEdits")
@@ -185,7 +192,7 @@ class CarPlayHostSettingsTest {
 
     @Test fun transportLossWhileMenuIsOpenRecoversOnCancel() {
         attachController()
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         val listener = activity.javaClass.getDeclaredMethod("createSessionListener", Int::class.javaPrimitiveType)
             .apply { isAccessible = true }.invoke(activity, 0) as AirPlaySessionListener
         listener.onTransportError("transport lost")
@@ -195,7 +202,7 @@ class CarPlayHostSettingsTest {
 
     @Test fun wifiResetFailureRequiresManualRecoveryAfterCancel() {
         attachController()
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         report(CarPlayStatus.Failed("Wi-Fi needs a reset", wifiResetRequired = true))
         invoke("cancelSettingsEdits")
         assertEquals(View.VISIBLE, (field("wifiRecoveryButton") as View).visibility)
@@ -206,7 +213,7 @@ class CarPlayHostSettingsTest {
     @Test fun savingWirelessAfterWifiResetFailureStillRequiresManualRecovery() {
         attachController()
         AirPlayPersistence.saveWirelessEnabled(activity, true)
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         report(CarPlayStatus.Failed("Wi-Fi needs a reset", wifiResetRequired = true))
         invoke("saveSettingsAndReconnect")
         assertEquals(View.VISIBLE, (field("wifiRecoveryButton") as View).visibility)
@@ -216,7 +223,7 @@ class CarPlayHostSettingsTest {
     @Test fun savingWiredModeAfterWifiResetFailureRestartsWithTheNewSettings() {
         attachController()
         AirPlayPersistence.saveWirelessEnabled(activity, true)
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         report(CarPlayStatus.Failed("Wi-Fi needs a reset", wifiResetRequired = true))
         setField("wirelessEnabled", false)
         invoke("saveSettingsAndReconnect")
@@ -226,7 +233,7 @@ class CarPlayHostSettingsTest {
 
     @Test fun staleFailureDoesNotRestartWhenTheMenuCloses() {
         val controller = attachController()
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         report(CarPlayStatus.Failed("old failure"), generation = -1)
         invoke("cancelSettingsEdits")
         assertSame(controller, field("controller"))
@@ -234,7 +241,7 @@ class CarPlayHostSettingsTest {
     }
 
     @Test fun authenticationChoicesOnlyExposeLocalAndCh341() {
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         val options = views(menu()).filterIsInstance<RadioButton>().filter { it.tag is MfiTarget }.toList()
         assertEquals(listOf(MfiTarget.LOCAL, MfiTarget.USB_CH341), options.map { it.tag })
         options.first().performClick()
@@ -245,7 +252,7 @@ class CarPlayHostSettingsTest {
 
     @Test fun selectingLocalWithoutIdentityKeepsTheMenuAndSavedUsbChoice() {
         attachController()
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         views(menu()).filterIsInstance<RadioButton>().first { it.tag == MfiTarget.LOCAL }.performClick()
         invoke("saveSettingsAndReconnect")
         assertTrue(field("menuOpen") as Boolean)
@@ -257,7 +264,7 @@ class CarPlayHostSettingsTest {
     @Test fun switchingToUsbPersistsAndPassesUsbToTheRuntime() {
         AirPlayPersistence.saveMfiTarget(activity, MfiTarget.LOCAL)
         attachController()
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         views(menu()).filterIsInstance<RadioButton>().first { it.tag == MfiTarget.USB_CH341 }.performClick()
         invoke("saveSettingsAndReconnect")
         assertFalse(field("menuOpen") as Boolean)
@@ -308,7 +315,7 @@ class CarPlayHostSettingsTest {
     @Test fun cancelRestoresSafeAreaResetAfterTheWindowChangesSize() {
         val original = SafeAreaRect(20, 20, 1800, 900)
         AirPlayPersistence.saveSafeAreaRect(activity, 1920, 942, original)
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         resizeWindow(1920, 942)
         invoke("resetSafeAreaForCurrentSize")
         assertNull(AirPlayPersistence.loadSafeAreaRect(activity, 1920, 942))
@@ -319,7 +326,7 @@ class CarPlayHostSettingsTest {
     }
 
     @Test fun cancelRemovesNewSafeAreaSavedAtAnotherWindowSize() {
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         resizeWindow(1920, 942)
         invoke("openSafeAreaEditor")
         val editor = field("safeAreaEditorView") as SafeAreaEditorView
@@ -333,7 +340,7 @@ class CarPlayHostSettingsTest {
     }
 
     @Test fun savingKeepsSafeAreaEditsMadeAfterAWindowResize() {
-        invoke("openSettingsMenu")
+        invoke("openLegacySettingsMenu")
         resizeWindow(1920, 942)
         invoke("openSafeAreaEditor")
         val edited = SafeAreaRect(20, 20, 1800, 900)

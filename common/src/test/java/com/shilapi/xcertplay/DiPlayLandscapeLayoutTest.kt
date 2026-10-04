@@ -145,6 +145,25 @@ class DiPlayLandscapeLayoutTest {
         assertNotNull(button(layout(), R.string.connect_phone))
     }
 
+    @Test fun unifiedAdvancedOptionsKeepTheFixedHeaderAndAccessibleControls() {
+        create()
+        button(layout(), R.string.settings).performClick()
+        var root = layout()
+        button(root, R.string.show_advanced_settings).performClick()
+        root = layout()
+        val back = button(root, R.string.back)
+        val before = bounds(root, back)
+        val scroll = descendants(root).filterIsInstance<ScrollView>().single()
+        val hide = button(root, R.string.hide_advanced_settings)
+        scroll.scrollTo(0, bounds(root, hide).top - scroll.top)
+        assertEquals(before, bounds(root, back))
+        buttons(root).filter { it.visibility == View.VISIBLE }.forEach {
+            assertTrue("${it.text} touch height", it.height >= dp(48))
+        }
+        preview(root, "mi10-unified-advanced-settings")
+        assertNotNull(button(root, R.string.safe_area))
+    }
+
     @Test fun upstreamChannelChoiceAndScrollRestorationWorkInCompactConnectionPage() {
         create()
         AirPlayPersistence.saveWirelessHotspotMode(activity, WirelessHotspotMode.WIFI_P2P)
