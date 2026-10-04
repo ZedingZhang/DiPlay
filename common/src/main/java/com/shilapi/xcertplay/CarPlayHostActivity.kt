@@ -2984,7 +2984,7 @@ class CarPlayHostActivity : ComponentActivity() {
         Build.MANUFACTURER.startsWith("BYD", ignoreCase = true) ||
             Build.BRAND.startsWith("BYD", ignoreCase = true) ||
             Build.FINGERPRINT.startsWith("BYD-AUTO/", ignoreCase = true) ||
-            com.shilapi.xcertplay.hud.BydOutputSettings.available(this)
+            com.shilapi.xcertplay.hud.BydOutputSettings.navigationAvailable(this)
 
     private fun loadAirPlayIcon(): AirPlayIcon {
         val customBytes = try {
