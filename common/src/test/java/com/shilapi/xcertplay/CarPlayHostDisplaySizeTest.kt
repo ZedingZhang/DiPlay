@@ -201,8 +201,20 @@ class CarPlayHostDisplaySizeTest {
             .apply { isAccessible = true }
         restore.invoke(activity, original)
         val saved = Bundle()
-        activity.javaClass.getDeclaredMethod("onSaveInstanceState", Bundle::class.java)
-            .apply { isAccessible = true }.invoke(activity, saved)
+        // Saved-state callbacks require a created ComponentActivity, unlike the lightweight
+        // host used by the size-only tests above. Exercise the real create/save path here.
+        val createdController = Robolectric.buildActivity(CarPlayHostActivity::class.java)
+        val createdHost = createdController.get()
+        try {
+            createdController.create(original)
+            createdController.saveInstanceState(saved)
+        } finally {
+            createdController.destroy()
+            for (name in listOf("teardownExecutor", "airPlayCommandExecutor")) {
+                (createdHost.javaClass.getDeclaredField(name).apply { isAccessible = true }
+                    .get(createdHost) as ExecutorService).shutdownNow()
+            }
+        }
         shadowOf(activity.windowManager.defaultDisplay).setRotation(Surface.ROTATION_0)
         setField("lockedCarPlayRotation", null)
         setField("lockedCarPlayOrientation", null)
