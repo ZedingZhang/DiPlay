@@ -1,0 +1,11 @@
+<resources>
+    <string name="advanced_settings">高级设置</string>
+    <string name="show_advanced_settings">展开高级设置</string>
+    <string name="hide_advanced_settings">收起高级设置</string>
+    <string name="advanced_settings_hint">连接前和 CarPlay 中使用同一套已保存设置。需要重新连接的更改会在保存时应用。</string>
+    <string name="advanced_physical_hint">物理长度也会影响 CarPlay 尺寸预设。日常使用请在“显示与性能”中选择大、中或小。</string>
+    <string name="advanced_fps_summary">%1$d 帧/秒</string>
+    <string name="advanced_mm_summary">%1$d 毫米</string>
+    <string name="advanced_text_error">请输入非空内容，且不能包含空字符。</string>
+    <string name="advanced_safe_area_title">安全区域 · %1$d × %2$d</string>
+</resources>

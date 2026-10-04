@@ -1,0 +1,11 @@
+<resources>
+    <string name="advanced_settings">Advanced settings</string>
+    <string name="show_advanced_settings">Show advanced settings</string>
+    <string name="hide_advanced_settings">Hide advanced settings</string>
+    <string name="advanced_settings_hint">These options use the same saved settings before and during CarPlay. Changes that need a new connection apply when saved.</string>
+    <string name="advanced_physical_hint">Physical length also selects the CarPlay size preset. Set the usual Large, Medium or Small size under Display and performance.</string>
+    <string name="advanced_fps_summary">%1$d fps</string>
+    <string name="advanced_mm_summary">%1$d mm</string>
+    <string name="advanced_text_error">Enter a non-empty value without null characters.</string>
+    <string name="advanced_safe_area_title">Safe area · %1$d × %2$d</string>
+</resources>

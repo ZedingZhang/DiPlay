@@ -1,6 +1,6 @@
 # DiPlay
 
-> **Phone adaptation in this fork:** Upstream v0.2.11 is integrated with the four Xiaomi Mi 10 / Android 11 fixes previously tested on v0.2.9: settled rotation dimensions during reconnect, effective CarPlay size settings, no BYD return tile on non-BYD devices, and a compact landscape home/settings UI. See the [phone regression checklist](docs/TESTING.md). The upstream BYD scope below describes the original project.
+> **Phone adaptation in this fork:** Upstream v0.2.11 and the subsequent main snapshot `e6e7cc0` are integrated with the four Xiaomi Mi 10 / Android 11 fixes previously tested on v0.2.9: settled rotation dimensions during reconnect, effective CarPlay size settings, no BYD return tile on non-BYD devices, and a compact landscape home/settings UI. The combined update still needs device testing; see the [phone regression checklist](docs/TESTING.md). The separate Wi-Fi Direct investigation in PR #6 remains deferred. The upstream BYD scope below describes the original project.
 
 **CarPlay for compatible BYD Android head units.** Wired and wireless, with the familiar DiAuto interface. Independent app: `com.shihab.diplay`.
 

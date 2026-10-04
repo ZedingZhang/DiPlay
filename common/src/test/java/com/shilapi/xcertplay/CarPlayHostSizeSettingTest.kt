@@ -64,9 +64,22 @@ class CarPlayHostSizeSettingTest {
     }
 
     @Test fun sizeComposesWithResolutionAndPortraitRotation() {
-        select(CarPlaySize.SMALL, resolution = 8)
+        select(CarPlaySize.SMALL, resolutionPercent = 80)
         assertCanvas(config().main, 2118 to 1016)
         assertCanvas(config(width = 1080, height = 2250).main, 1016 to 2118)
+    }
+
+    @Test fun customIntegerResolutionComposesWithEverySizeAndPortraitRotation() {
+        val expected = listOf(1116 to 536, 1284 to 616, 1510 to 724)
+        CarPlaySize.entries.forEachIndexed { index, preset ->
+            select(preset, resolutionPercent = 57)
+            assertCanvas(config().main, expected[index])
+            assertCanvas(config(width = 1080, height = 2250).main,
+                expected[index].second to expected[index].first)
+            assertEquals(57, AirPlayPersistence.loadDisplayScalePercent(activity))
+            assertEquals(preset.widthMillimeters, AirPlayPersistence.loadWidthPhysicalMm(activity))
+            assertTrue(DisplayDiagnosticSnapshot.report(activity).contains("resolution=57%"))
+        }
     }
 
     @Test fun changingPhysicalWidthInTheHostAlsoChangesTheCanvas() {
@@ -154,9 +167,9 @@ class CarPlayHostSizeSettingTest {
         ShadowBuild.setFingerprint(fingerprint)
     }
 
-    private fun select(size: CarPlaySize, resolution: Int = 10) {
+    private fun select(size: CarPlaySize, resolutionPercent: Int = 100) {
         AirPlayPersistence.saveWidthPhysicalMm(activity, size.widthMillimeters)
-        AirPlayPersistence.saveDisplayScaleTenths(activity, resolution)
+        AirPlayPersistence.saveDisplayScalePercent(activity, resolutionPercent)
         AirPlayPersistence.saveFps(activity, 60)
         activity.javaClass.getDeclaredMethod("loadPersistedSettings").apply { isAccessible = true }.invoke(activity)
     }

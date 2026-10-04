@@ -6,9 +6,20 @@ For channel memory, connect until authenticated CarPlay renders, disconnect and 
 
 Include head-unit model, DiLink/Android, iPhone/iOS, wired/wireless, app version and exact steps. Do not post credentials or unreviewed personal information. See [compatibility](COMPATIBILITY.md) for remaining limitations.
 
-## Upstream v0.2.11 integration
+## Upstream post-v0.2.11 integration
 
-The integration uses the upstream release tag `v0.2.11` at `6014025c653c4dae88d319ce446e0bf1ddb658ea`. The four phone fixes below must pass together with the upstream regressions before publishing the fork update. The separate draft Wi-Fi Direct investigation in PR #6 is deferred and is not part of this integration.
+The integration includes the upstream release tag `v0.2.11` at `6014025c653c4dae88d319ce446e0bf1ddb658ea` and subsequent main commits through `e6e7cc0eaf175ef397eee7ac6223eb267cdc68bd`. These main updates have not been published as a newer upstream release. The four phone fixes below must pass together with the upstream regressions before publishing the fork update. The separate draft Wi-Fi Direct investigation in PR #6 is deferred and is not part of this integration. Its unresolved phone connection failure is not claimed fixed by these updates.
+
+The debug package identifies itself as `0.2.11-post-sync-hud-test` to distinguish this snapshot from the earlier release. Check connection and microphone, then exercise the following new phone controls:
+
+- Enter a custom resolution such as 57%, save/reconnect and confirm it remains 57% after reopening Settings. Cancel a change to 83% and confirm it stays 57%. At 57%, compare all three CarPlay sizes in both orientations; the requested canvas and touch mapping must follow both settings.
+- Return from connection setup to the existing CarPlay activity and reconnect. The saved connection mode, hotspot and authentication target must be reloaded. The configured multi-finger swipe must open the same DiPlay settings page as the home Settings button, preserving the current session. Advanced settings start collapsed and remain expanded after rotation when opened. Dialog Cancel leaves the saved preference unchanged; Apply and reconnect applies changes that require a new session.
+- Toggle top and bottom system bars independently; leave and reopen CarPlay to confirm the saved values. Rotate and enter/leave split-screen; preparation content must fit, navigation must remain accessible and touch mapping must follow the negotiated canvas.
+- In the picture panel, change brightness, contrast, saturation and warmth during CarPlay, try the temporary original comparison and reset to neutral. These controls require TextureView rendering; confirm default picture settings preserve the original appearance.
+- Try System, Day, Night and Ambient night modes. Ambient depends on a working light sensor; test the threshold and delay and fallback to System if unavailable. The iPhone's appearance setting can still override the result.
+- Export diagnostics. Where public Downloads or a document picker are unavailable, verify the private fallback can be viewed/shared. USB confirmation automation is optional and requires explicitly enabling its accessibility service; leave it disabled unless testing it.
+
+BYD turn cards and virtual instrument maps remain upstream features. Their hardware behavior is not validated by Xiaomi phone tests.
 
 On Xiaomi Mi 10 / Android 11, reconnect wirelessly, check picture/touch/music, make a call and verify microphone behavior and music playback after the call ends. Try Wi-Fi Direct if used; Auto should use bounded recovery rather than an indefinite wait, while unsupported manual channels must report an error. If using USB, also try starting it before filling the Manual wireless hotspot fields. Confirm the saved report contains connection stages, startup settings and microphone diagnostics after exercising those paths. The BYD navigation card should remain hidden on this phone; the new optional Advanced vehicle data section does not need to be enabled. Repeat all four regression sections below, including rotation while reconnecting and changing the CarPlay size preset.
 
@@ -18,7 +29,15 @@ The manual standalone APK workflow verifies the published v0.2.11 APK digest bef
 
 On Xiaomi Mi 10 / Android 11, open the Chinese home screen in landscape with the default font size, both disconnected and with CarPlay connected. Wireless connect/open CarPlay, choose iPhone, disconnect, USB, connection setup and settings should fit above the fold in a short window at least 600dp wide. On shorter landscape windows below 600dp wide, cards stack and remain scrollable. Larger fonts may require scrolling, but button labels should wrap and touch targets remain at least 48dp high.
 
-Open Settings and Connection setup. Check the denser spacing and side-by-side choices, scroll to the bottom and confirm the top Back button remains visible. Change resolution, cancel another choice, switch connection mode and verify the same saved values and reconnect behavior as before. Rotate on each page; the current page should remain open and portrait should return to the normal layout. Check a car-sized landscape window at least 480dp high still has the original large controls. Native Android 11 layout tests export Chinese home/settings and enlarged English text previews with the CI test reports.
+Open Settings and Connection setup. Check the denser spacing and side-by-side choices, scroll to the bottom and confirm the top Back button remains visible. Change resolution, cancel another choice, switch connection mode and verify the same saved values and reconnect behavior as before. Rotate on each page; the current page should remain open, and narrow portrait windows use the upstream compact layout while keeping the primary actions accessible. Check a car-sized landscape window at least 550dp wide and 480dp high outside multi-window mode still has the original large controls. Native Android 11 layout tests export Chinese home/settings, a narrow window and enlarged English text previews with the CI test reports.
+
+## Unified settings and advanced controls
+
+On Xiaomi Mi 10 / Android 11, compare home Settings with the three-finger swipe during CarPlay: the page and settings must be identical. Repeat with the configured two- and four-finger gestures. Wrong finger counts or horizontal/upward gestures must not open settings. Opening settings, dismissing a dialog or returning home must preserve a healthy session; Open CarPlay returns to it.
+
+Expand Advanced settings. Check Local offline / USB CH341 authentication, software HEVC, physical reference/basis, safe area, receiver manufacturer/model and on-screen debug logs. A saved 55 fps value must remain visible, with all 30–60 fps options in 5 fps steps. Local authentication must be validated before saving; failure leaves the old authentication choice intact. Choosing USB must not install or silently switch to local authentication. A non-BYD phone must still hide OEM icon controls and the CarPlay BYD tile.
+
+Safe-area editing becomes available after the CarPlay viewport is known. Cancel and Reset inside that dialog must not change the saved rect; Save applies the draft and reconnects. Rotate while editing and confirm the saved rect belongs to the dimensions named in the dialog rather than the newly rotated viewport. Debug-log visibility must reload when returning to CarPlay. Scroll the advanced section in a short landscape window and confirm fixed navigation and at least 48dp touch targets.
 
 ## CarPlay OEM return icon
 
