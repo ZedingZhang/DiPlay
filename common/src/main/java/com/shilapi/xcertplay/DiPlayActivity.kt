@@ -921,7 +921,7 @@ class DiPlayActivity : ComponentActivity() {
             .setPositiveButton(getString(if (CarPlayBackgroundSession.hasSession()) R.string.apply_and_reconnect else R.string.save), null)
             .setNegativeButton(R.string.cancel, null).setNeutralButton(R.string.reset, null).create()
         dialog.setOnShowListener {
-            editor.layoutParams = editor.layoutParams.apply { height = (resources.displayMetrics.heightPixels * .55f).toInt() }
+            editor.layoutParams = editor.layoutParams.apply { this.height = (resources.displayMetrics.heightPixels * .55f).toInt() }
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 editor.setRect(AirPlaySafeArea.default(width, height), width, height)
             }
