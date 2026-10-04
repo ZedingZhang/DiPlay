@@ -66,7 +66,9 @@ jobs:
           for activity in ('DiPlayActivity', 'CarPlayHostActivity'):
               block = next(block for block in activities if 'com.shilapi.xcertplay.' + activity + '"' in block)
               attributes = block.split('E:', 1)[0]
-              assert re.search(r'screenOrientation.*\(type 0x10\)0xa\b', attributes), activity
+              orientation = next(line.split('=', 1)[1].strip() for line in attributes.splitlines() if 'screenOrientation' in line)
+              print(activity + ' screenOrientation=' + orientation)
+              assert re.fullmatch(r'(?:\(type 0x10\))?(?:0x0*a|10)', orientation), activity
           print('Verified fullSensor orientation on both main settings and CarPlay activities')
           apk_path = Path('mobile/build/outputs/apk/debug/mobile-debug.apk')
           runtime = Path(os.environ['RUNNER_TEMP']) / 'diplay-test-runtime' / 'offline-mfi'
