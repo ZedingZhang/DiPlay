@@ -161,7 +161,7 @@ class DiPlayLandscapeLayoutTest {
             val root = layout()
             preview(root, "phone-$page-english-large-text")
             buttons(root).forEach { control ->
-                assertTrue("${control.text} target=${control.width}x${control.height} minimum=${dp(48)} visibility=${control.visibility}",
+                assertTrue("${control.javaClass.simpleName} ${control.text} target=${control.width}x${control.height} minimum=${dp(48)} visibility=${control.visibility}",
                     control.height >= dp(48) && control.width >= dp(48))
                 val lines = requireNotNull(control.layout)
                 assertTrue("${control.text} clipped", lines.getLineBottom(lines.lineCount - 1) <=

@@ -2852,6 +2852,7 @@ class DiPlayActivity : ComponentActivity() {
         val text = column(); text.addView(label(title, 18, TEXT, true)); text.addView(label(description, 14, MUTED).apply { setPadding(0, dp(if (isCompactLayout) 2 else 6), dp(16), 0) })
         line.addView(text, LinearLayout.LayoutParams(0, -2, 1f))
         val control = Switch(this).apply { contentDescription = title; isChecked = value; isEnabled = enabled; minHeight = dp(if (isCompactLayout) 48 else 56); buttonTintList = ColorStateList.valueOf(ACCENT); setOnCheckedChangeListener { _, checked -> save(checked) } }
+        if (compactSettings) control.minWidth = dp(48)
         line.addView(control)
         if (compactSettings && parent.tag != COMPACT_HALF_CARD) addPairedControl(parent, line, "compactToggles")
         else parent.addView(line)
